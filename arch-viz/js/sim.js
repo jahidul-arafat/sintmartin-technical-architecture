@@ -41,7 +41,7 @@ const SIM = {
     {id:'u1s1', layer:'CHANNEL',  comp:'Browser / Mobile App',        emoji:'🌐',action:'HTTPS GET portal URL',
      plain:'User navigates to the portal. A secure TLS connection is established.',
      detail:'TLS 1.3 handshake with Azure Front Door. HSTS enforced (max-age=31536000). CSP blocks inline scripts. OCSP stapling active. TTFB target 200ms.',latency:'~80ms',nfr:'NFR-19',status:'ok'},
-    {id:'u1s2', layer:'CHANNEL',  comp:'Portal SPA (Next.js)',         emoji:'⚛️',action:'Generate PKCE S256 challenge pair',
+    {id:'u1s2', layer:'CHANNEL',  comp:'Portal SPA (.NET Blazor)',         emoji:'🔷',action:'Generate PKCE S256 challenge pair',
      plain:'The browser secretly generates a one-time key pair so the auth code cannot be stolen in transit.',
      detail:'crypto.getRandomValues()→32-byte code_verifier. code_challenge=BASE64URL(SHA-256(verifier)). Stored in sessionStorage only — never localStorage.',latency:'<1ms',nfr:'Security',status:'ok'},
     {id:'u1s3', layer:'IDENTITY', comp:'eID Identity Provider',        emoji:'🔑',action:'OIDC auth-code flow with PKCE',
@@ -1635,12 +1635,19 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(btn.dataset.tab==='sim'){
       panel.style.display='block';
       buildSim();
-      // Always rebuild KG so it gets the real rendered dimensions
       requestAnimationFrame(()=>requestAnimationFrame(()=>{
         buildKG();
         if(SS.storyId) kgHighlightStory(SS.storyId);
       }));
-    } else { panel.classList.add('active'); }
+    } else if(btn.dataset.tab==='telemetry'){
+      panel.classList.add('active');
+      // Rebuild D3 now that panel is visible and has real clientWidth
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        if(typeof window._rebuildTelemetry==='function') window._rebuildTelemetry();
+      }));
+    } else {
+      panel.classList.add('active');
+    }
   },true);
 });
 

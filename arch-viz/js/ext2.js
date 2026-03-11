@@ -424,6 +424,7 @@ const TEL_COMP = [
   {id:'O_SCHEMA', x:658, y:440, w:182,h:44,c:'#3b82f6',lbl:'Canonical Log Schema', sub:'JSON · traceparent · PII-stripped'},
 ];
 
+
 const TEL_DETAIL = {
   S_PORTAL:{ t:'Portal & Channels', plain:'The browser/app injects W3C traceparent and a UUID v4 x-correlation-id into every XHR request. No PII is ever included in telemetry — subjectId is SHA-256 hashed.', signals:['W3C traceparent on every XHR','x-correlation-id UUID v4 per user action','PerformanceObserver: TTFB, FCP, LCP → App Insights','No raw PII: subjectId is SHA-256 hashed'], metrics:['Page load P95 < 2s','XHR error rate per route/channel','Client JS exception rate'] },
   S_APIM:{ t:'APIM Premium', plain:'APIM emits per-request diagnostics — method, route, status, latency, JWT claims subset. Rate-limit hit events go to Log Analytics.', signals:['Diagnostics: method, route, status, latencyMs, backendId','JWT claims subset (iss, aud, acr, scopes) — sub NEVER logged','Rate-limit hit events (429) → Log Analytics','Policy execution time: inbound + backend + outbound phases'], metrics:['APIM policy exec P95 < 150ms','4xx rate per API product (alert on 5% threshold)','Backend latency per origin'] },
@@ -447,384 +448,392 @@ const TEL_DETAIL = {
   O_SCHEMA:{ t:'Canonical Log Schema', plain:'Every service MUST emit structured JSON logs conforming to the canonical schema. CI pipeline rejects non-compliant log calls. This ensures corrId and traceparent are always present for cross-service correlation.', signals:['Required fields: ts, level, svc, corrId, traceparent, env, msg','Sub-schemas for: consent_gate_checked, adapter_called, cb_state_changed, dlq_parked','PII rules: subjectId → SHA-256(salt+NIN), no name/address/DOB','Enforced at build time: JSON schema lint in CI pipeline'], metrics:['Schema compliance = 100% (CI gate)','corrId present = 100% (lint rule)','PII leak detection in CI: Presidio scan of log fixtures'] },
 };
 
+
 function buildTelemetryDiagram() {
+  // Called at DOMContentLoaded — sets up structure only.
+  // Actual SVG render deferred until tab is visible (real clientWidth).
+  window._rebuildTelemetry = null; // will be set below after structure is ready
+
   const panel = document.getElementById('panel-telemetry');
   if (!panel) return;
 
-  // ── Full-page takeover: remove padding, set height ──
-  panel.style.cssText = 'display:block;height:calc(100vh - 124px);overflow:hidden;padding:0;position:relative;background:#080807';
-
+  // Replace panel contents with diagram-fullpage layout matching arch tabs
   panel.innerHTML = `
-    <div id="tel-topbar" style="height:44px;display:flex;align-items:center;gap:12px;padding:0 20px;
-      background:#0f0f0e;border-bottom:1px solid rgba(255,255,255,.1);flex-shrink:0;z-index:10;position:relative">
-      <div style="font-size:.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:#f97316">
-        12.2 Telemetry Architecture
+    <div class="diagram-fullpage" id="tel-fullpage">
+      <div class="diagram-canvas-wrap" id="tel-canvas" style="background:#ffffff">
+        <div class="diagram-toolbar" id="tel-toolbar">
+          <span class="diag-label">Telemetry Architecture</span>
+          <button class="tool-btn" id="tel-zi">＋</button>
+          <button class="tool-btn" id="tel-zo">－</button>
+          <button class="tool-btn" id="tel-rs">Reset</button>
+        </div>
+        <div class="diagram-hint">
+          <span class="s-dot"></span>&nbsp;
+          Click any node for signals &amp; SLIs &nbsp;·&nbsp; Drag to pan &nbsp;·&nbsp; Scroll to zoom
+        </div>
+        <div id="tel-svg-wrap" style="width:100%;height:100%;position:relative"></div>
       </div>
-      <div style="font-size:.65rem;color:rgba(255,255,255,.35)">
-        Signal Flow: Sources → OTel Collector → Azure Monitor → Outputs
-      </div>
-      <div style="margin-left:auto;font-size:.6rem;color:rgba(255,255,255,.3);font-style:italic">
-        Click any node for signals &amp; SLIs · scroll-zoom · drag to pan
-      </div>
-    </div>
-    <div id="tel-d3-wrap" style="position:absolute;inset:44px 0 0 0;overflow:hidden;background:#080807"></div>
-    <div id="tel-modal" style="display:none;position:fixed;inset:0;z-index:600;
-      background:rgba(0,0,0,.65);backdrop-filter:blur(6px);align-items:center;justify-content:center">
-      <div style="background:#141412;border:1px solid rgba(255,255,255,.15);border-radius:14px;
-        padding:24px 28px;max-width:520px;width:92%;max-height:82vh;overflow-y:auto;position:relative;
-        box-shadow:0 24px 80px rgba(0,0,0,.8)">
-        <button id="tel-modal-close" style="position:absolute;top:14px;right:16px;background:none;border:none;
-          color:rgba(255,255,255,.45);font-size:1.2rem;cursor:pointer;line-height:1">✕</button>
-        <div id="tel-modal-body"></div>
-      </div>
+      <aside class="diagram-sidebar">
+        <div class="sidebar-hdr">
+          <div class="sidebar-hdr-title">Node Details</div>
+        </div>
+        <div class="sidebar-body">
+          <div id="tel-sidebar-empty" style="padding:24px 16px;text-align:center;color:var(--text-3);font-size:.78rem">
+            <div style="font-size:1.6rem;margin-bottom:8px;opacity:.25">📡</div>
+            Click any node to see its emitted signals and SLIs
+          </div>
+        </div>
+      </aside>
     </div>`;
 
-  document.getElementById('tel-modal-close').onclick = () =>
-    document.getElementById('tel-modal').style.display = 'none';
-  document.getElementById('tel-modal').addEventListener('click', e => {
-    if (e.target === document.getElementById('tel-modal'))
-      document.getElementById('tel-modal').style.display = 'none';
-  });
+  // Only ever called when the Telemetry tab is clicked (panel is visible, clientWidth is real)
+  window._rebuildTelemetry = function() {
+    const wrap = document.getElementById('tel-svg-wrap');
+    if (!wrap) return;
+    _renderTelSVG(wrap);
+    if (wrap._ro) return;
+    wrap._ro = new ResizeObserver(() => _renderTelSVG(wrap));
+    wrap._ro.observe(wrap);
+  };
 
-  function showModal(nodeId) {
-    const det = TEL_DETAIL[nodeId];
-    const node = TEL_NODES_DATA.find(n => n.id === nodeId);
-    if (!det && !node) return;
-    const col = node ? node.col : '#f97316';
-    const grp = node ? node.group : '';
-    const title = det ? det.t : (node ? node.label.replace('\n',' ') : nodeId);
-    let html = `
-      <div style="font-size:.58rem;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:${col};margin-bottom:10px">${grp}</div>
-      <div style="font-size:1.05rem;font-weight:800;color:#f0f0ee;margin-bottom:14px;line-height:1.3">${title}</div>`;
-    if (det) {
-      html += `
-      <div style="font-size:.74rem;color:rgba(255,255,255,.7);line-height:1.7;margin-bottom:18px;
-        padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,.08)">${det.plain}</div>
-      <div style="font-size:.58rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;
-        color:rgba(255,255,255,.35);margin-bottom:10px">Emitted Signals</div>
-      <ul style="margin:0 0 18px;padding-left:18px;font-size:.72rem;color:rgba(255,255,255,.65);line-height:1.75">
-        ${(det.signals||[]).map(s=>`<li>${s}</li>`).join('')}
-      </ul>
-      <div style="font-size:.58rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;
-        color:rgba(255,255,255,.35);margin-bottom:10px">Key Metrics &amp; SLIs</div>
-      <ul style="margin:0;padding-left:18px;font-size:.72rem;color:rgba(255,255,255,.65);line-height:1.75">
-        ${(det.metrics||[]).map(s=>`<li>${s}</li>`).join('')}
-      </ul>`;
-    } else {
-      html += `<div style="font-size:.74rem;color:rgba(255,255,255,.5);line-height:1.7">
-        Component in the <strong style="color:#f0f0ee">${grp}</strong> layer.</div>`;
-    }
-    document.getElementById('tel-modal-body').innerHTML = html;
-    document.getElementById('tel-modal').style.display = 'flex';
+  // Toolbar pan/zoom state
+  const state = { x:0, y:0, scale:1 };
+  function applyTransform() {
+    const inner = document.getElementById('tel-inner');
+    if (inner) inner.setAttribute('transform', `translate(${state.x},${state.y}) scale(${state.scale})`);
   }
+  window._telZoomIn  = () => { state.scale = Math.min(4, state.scale*1.2); applyTransform(); };
+  window._telZoomOut = () => { state.scale = Math.max(0.2, state.scale*0.83); applyTransform(); };
+  window._telReset   = () => { state.x=0; state.y=0; state.scale=1; applyTransform(); };
+  document.getElementById('tel-zi').onclick = window._telZoomIn;
+  document.getElementById('tel-zo').onclick = window._telZoomOut;
+  document.getElementById('tel-rs').onclick = window._telReset;
 
-  requestAnimationFrame(() => requestAnimationFrame(() => _buildTelD3(showModal)));
+  // Pan/zoom on canvas
+  const canvas = document.getElementById('tel-canvas');
+  let pan=false, px=0, py=0, ptx=0, pty=0;
+  canvas.addEventListener('mousedown', e => {
+    if (e.target.closest('.tool-btn,.diagram-toolbar')) return;
+    pan=true; px=e.clientX; py=e.clientY; ptx=state.x; pty=state.y;
+    canvas.style.cursor='grabbing';
+  });
+  document.addEventListener('mousemove', e => {
+    if (!pan) return;
+    state.x = ptx+(e.clientX-px); state.y = pty+(e.clientY-py);
+    applyTransform();
+  });
+  document.addEventListener('mouseup', () => { pan=false; canvas.style.cursor='grab'; });
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const f = e.deltaY < 0 ? 1.1 : 0.91;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX-rect.left, my = e.clientY-rect.top;
+    state.x = mx + (state.x-mx)*f; state.y = my + (state.y-my)*f;
+    state.scale = Math.min(4, Math.max(0.2, state.scale*f));
+    applyTransform();
+  }, { passive:false });
 }
 
-// ── All 20 nodes mapped to correct TEL_DETAIL keys ──
+// ── Node definitions — IDs match TEL_DETAIL keys ──────────────────────────────
 const TEL_NODES_DATA = [
-  // col 0 – Portal & Channels
-  { id:'S_PORTAL', label:'Web / Mobile\n/ Kiosk',     col:'#3b82f6', group:'Portal & Channels', col_idx:0 },
-  // col 1 – API Gateway
-  { id:'S_APIM',   label:'APIM Premium',              col:'#f97316', group:'API Gateway',        col_idx:1 },
+  // col 0 – Portal
+  { id:'S_PORTAL', label:'Web / Mobile\n/ Kiosk',         col:'#2563eb', group:'Portal & Channels', col_idx:0 },
+  // col 1 – Gateway
+  { id:'S_APIM',   label:'APIM Premium',                  col:'#ea580c', group:'API Gateway',        col_idx:1 },
   // col 2 – App Services
-  { id:'S_FACADE', label:'API Facade',                col:'#8b5cf6', group:'App Services',       col_idx:2 },
-  { id:'S_ORCH',   label:'Orchestrator',              col:'#06b6d4', group:'App Services',       col_idx:2 },
-  { id:'S_ADAPT',  label:'Adapters ×6',               col:'#22c55e', group:'App Services',       col_idx:2 },
-  { id:'S_SEC',    label:'Consent Gate',              col:'#ec4899', group:'App Services',       col_idx:2 },
-  // col 3 – Data / Messaging
-  { id:'S_SB',     label:'Service Bus',               col:'#f59e0b', group:'Messaging',          col_idx:3 },
-  { id:'S_REDIS',  label:'Redis MDM',                 col:'#06b6d4', group:'Data Stores',        col_idx:3 },
-  { id:'S_PG',     label:'PostgreSQL\nODS',           col:'#22c55e', group:'Data Stores',        col_idx:3 },
-  // col 4 – OTel Collection
-  { id:'C_OTEL',   label:'OTel Collector',            col:'#f97316', group:'OTel Collection',    col_idx:4 },
-  { id:'C_HEAD',   label:'Head Sampling\n10%',        col:'#f97316', group:'OTel Collection',    col_idx:4 },
-  { id:'C_TAIL',   label:'Tail Sampling\nerrors 100%',col:'#f97316', group:'OTel Collection',    col_idx:4 },
+  { id:'S_FACADE', label:'API Facade',                    col:'#7c3aed', group:'App Services',       col_idx:2 },
+  { id:'S_ORCH',   label:'Orchestrator',                  col:'#0891b2', group:'App Services',       col_idx:2 },
+  { id:'S_ADAPT',  label:'Adapters ×6',                   col:'#16a34a', group:'App Services',       col_idx:2 },
+  { id:'S_SEC',    label:'Consent Gate',                  col:'#db2777', group:'App Services',       col_idx:2 },
+  // col 3 – Data
+  { id:'S_SB',     label:'Service Bus',                   col:'#d97706', group:'Messaging',          col_idx:3 },
+  { id:'S_REDIS',  label:'Redis MDM',                     col:'#0891b2', group:'Data Stores',        col_idx:3 },
+  { id:'S_PG',     label:'PostgreSQL ODS',                col:'#16a34a', group:'Data Stores',        col_idx:3 },
+  // col 4 – OTel
+  { id:'C_OTEL',   label:'OTel Collector',                col:'#ea580c', group:'OTel Collection',    col_idx:4 },
+  { id:'C_HEAD',   label:'Head Sampling\n10%',            col:'#ea580c', group:'OTel Collection',    col_idx:4 },
+  { id:'C_TAIL',   label:'Tail Sampling\nerrors 100%',    col:'#ea580c', group:'OTel Collection',    col_idx:4 },
   // col 5 – Azure Monitor
-  { id:'ST_AI',    label:'App Insights\nTraces/Metrics', col:'#8b5cf6', group:'Azure Monitor',   col_idx:5 },
-  { id:'ST_LA',    label:'Log Analytics\nLogs',       col:'#8b5cf6', group:'Azure Monitor',      col_idx:5 },
-  // col 6 – Outputs / SecOps
-  { id:'O_SENT',   label:'Sentinel SIEM',             col:'#ef4444', group:'SecOps',             col_idx:6 },
-  { id:'O_SOAR',   label:'SOAR Playbook',             col:'#ef4444', group:'SecOps',             col_idx:6 },
-  { id:'O_SLO',    label:'SLO Burn-Rate\nAlerts',     col:'#f97316', group:'Alerting',           col_idx:6 },
-  { id:'O_KQL',    label:'KQL Dashboards',            col:'#8b5cf6', group:'BI & Alerting',      col_idx:6 },
-  { id:'O_PBI',    label:'Power BI',                  col:'#8b5cf6', group:'BI & Alerting',      col_idx:6 },
-  { id:'O_SCHEMA', label:'Log Schema\nPII-Minimised', col:'#22c55e', group:'Compliance',         col_idx:6 },
+  { id:'ST_AI',    label:'App Insights\nTraces/Metrics',  col:'#7c3aed', group:'Azure Monitor',      col_idx:5 },
+  { id:'ST_LA',    label:'Log Analytics\nLogs',           col:'#7c3aed', group:'Azure Monitor',      col_idx:5 },
+  // col 6 – Outputs
+  { id:'O_SENT',   label:'Sentinel SIEM',                 col:'#dc2626', group:'SecOps',             col_idx:6 },
+  { id:'O_SOAR',   label:'SOAR Playbook',                 col:'#dc2626', group:'SecOps',             col_idx:6 },
+  { id:'O_SLO',    label:'SLO Burn-Rate\nAlerts',         col:'#ea580c', group:'Alerting',           col_idx:6 },
+  { id:'O_KQL',    label:'KQL Dashboards',                col:'#7c3aed', group:'BI & Alerting',      col_idx:6 },
+  { id:'O_PBI',    label:'Power BI',                      col:'#7c3aed', group:'BI & Alerting',      col_idx:6 },
+  { id:'O_SCHEMA', label:'Log Schema\nPII-Minimised',     col:'#16a34a', group:'Compliance',         col_idx:6 },
 ];
 
 const TEL_EDGES_DATA = [
-  // Request path
-  { s:'S_PORTAL', t:'S_APIM',   lbl:'corrId + traceparent', col:'rgba(255,255,255,.55)', wt:2.2 },
-  { s:'S_APIM',   t:'S_FACADE', lbl:'JWT fwd',              col:'rgba(255,255,255,.4)',  wt:1.8 },
-  { s:'S_FACADE', t:'S_ORCH',   lbl:'command',              col:'rgba(255,255,255,.4)',  wt:1.8 },
-  { s:'S_ORCH',   t:'S_SEC',    lbl:'consent check',        col:'rgba(236,72,153,.6)',   wt:1.6 },
-  { s:'S_ORCH',   t:'S_ADAPT',  lbl:'adapter call',         col:'rgba(34,197,94,.5)',    wt:1.6 },
-  { s:'S_ORCH',   t:'S_SB',     lbl:'publish',              col:'rgba(245,158,11,.55)',  wt:1.4, dashed:false },
-  { s:'S_SB',     t:'S_ORCH',   lbl:'consume',              col:'rgba(245,158,11,.4)',   wt:1.2, dashed:true  },
-  { s:'S_ORCH',   t:'S_REDIS',  lbl:'cache r/w',            col:'rgba(6,182,212,.45)',   wt:1.3 },
-  { s:'S_ORCH',   t:'S_PG',     lbl:'write',                col:'rgba(34,197,94,.4)',    wt:1.2 },
-  // OTel signals (orange, prominent)
-  { s:'S_PORTAL', t:'C_OTEL',   lbl:'OTel spans',           col:'rgba(249,115,22,.75)',  wt:2.0, ec:'#f97316' },
-  { s:'S_APIM',   t:'C_OTEL',   lbl:'diagnostics',          col:'rgba(249,115,22,.7)',   wt:1.8, ec:'#f97316' },
-  { s:'S_FACADE', t:'C_OTEL',   lbl:'spans/metrics',        col:'rgba(249,115,22,.7)',   wt:1.8, ec:'#f97316' },
-  { s:'S_ORCH',   t:'C_OTEL',   lbl:'spans/metrics',        col:'rgba(249,115,22,.7)',   wt:2.0, ec:'#f97316' },
-  { s:'S_ADAPT',  t:'C_OTEL',   lbl:'spans/metrics',        col:'rgba(249,115,22,.65)',  wt:1.6, ec:'#f97316' },
+  { s:'S_PORTAL', t:'S_APIM',   lbl:'corrId+traceparent',  col:'rgba(37,99,235,.4)',   wt:2.0 },
+  { s:'S_APIM',   t:'S_FACADE', lbl:'JWT fwd',             col:'rgba(0,0,0,.22)',      wt:1.6 },
+  { s:'S_FACADE', t:'S_ORCH',   lbl:'command',             col:'rgba(0,0,0,.18)',      wt:1.4 },
+  { s:'S_ORCH',   t:'S_SEC',    lbl:'consent check',       col:'rgba(219,39,119,.45)', wt:1.4 },
+  { s:'S_ORCH',   t:'S_ADAPT',  lbl:'adapter call',        col:'rgba(22,163,74,.45)',  wt:1.4 },
+  { s:'S_ORCH',   t:'S_SB',     lbl:'publish',             col:'rgba(217,119,6,.45)',  wt:1.3 },
+  { s:'S_SB',     t:'S_ORCH',   lbl:'consume',             col:'rgba(217,119,6,.35)',  wt:1.1, dashed:true },
+  { s:'S_ORCH',   t:'S_REDIS',  lbl:'cache r/w',           col:'rgba(8,145,178,.4)',   wt:1.2 },
+  { s:'S_ORCH',   t:'S_PG',     lbl:'write',               col:'rgba(22,163,74,.35)',  wt:1.1 },
+  // OTel spans — orange, prominent
+  { s:'S_PORTAL', t:'C_OTEL',   lbl:'OTel spans',          col:'rgba(234,88,12,.7)',   wt:2.0, ec:'#ea580c' },
+  { s:'S_APIM',   t:'C_OTEL',   lbl:'diagnostics',         col:'rgba(234,88,12,.65)',  wt:1.8, ec:'#ea580c' },
+  { s:'S_FACADE', t:'C_OTEL',   lbl:'spans/metrics',       col:'rgba(234,88,12,.65)',  wt:1.8, ec:'#ea580c' },
+  { s:'S_ORCH',   t:'C_OTEL',   lbl:'spans/metrics',       col:'rgba(234,88,12,.7)',   wt:2.0, ec:'#ea580c' },
+  { s:'S_ADAPT',  t:'C_OTEL',   lbl:'spans/metrics',       col:'rgba(234,88,12,.6)',   wt:1.6, ec:'#ea580c' },
   // OTel internal
-  { s:'C_OTEL',   t:'C_HEAD',   lbl:'sample',               col:'rgba(249,115,22,.5)',   wt:1.4 },
-  { s:'C_OTEL',   t:'C_TAIL',   lbl:'error capture',        col:'rgba(249,115,22,.5)',   wt:1.4 },
-  // Export to Azure Monitor
-  { s:'C_HEAD',   t:'ST_AI',    lbl:'traces+metrics',       col:'rgba(139,92,246,.75)',  wt:2.2, ec:'#8b5cf6' },
-  { s:'C_TAIL',   t:'ST_LA',    lbl:'structured logs',      col:'rgba(139,92,246,.75)',  wt:2.2, ec:'#8b5cf6' },
-  // Downstream outputs
-  { s:'ST_LA',    t:'O_SENT',   lbl:'analytic rules',       col:'rgba(239,68,68,.7)',    wt:1.8, ec:'#ef4444' },
-  { s:'O_SENT',   t:'O_SOAR',   lbl:'incidents',            col:'rgba(239,68,68,.6)',    wt:1.6, ec:'#ef4444' },
-  { s:'ST_AI',    t:'O_SLO',    lbl:'burn-rate',            col:'rgba(249,115,22,.65)',  wt:1.6, ec:'#f97316' },
-  { s:'ST_AI',    t:'O_KQL',    lbl:'metrics',              col:'rgba(139,92,246,.55)',  wt:1.4, ec:'#8b5cf6' },
-  { s:'ST_LA',    t:'O_KQL',    lbl:'logs',                 col:'rgba(139,92,246,.55)',  wt:1.4, ec:'#8b5cf6' },
-  { s:'O_KQL',    t:'O_PBI',    lbl:'dashboards',           col:'rgba(139,92,246,.55)',  wt:1.4, ec:'#8b5cf6' },
-  { s:'ST_LA',    t:'O_SCHEMA', lbl:'schema enforce',       col:'rgba(34,197,94,.5)',    wt:1.2, ec:'#22c55e' },
+  { s:'C_OTEL',   t:'C_HEAD',   lbl:'10% head sample',     col:'rgba(234,88,12,.45)',  wt:1.3 },
+  { s:'C_OTEL',   t:'C_TAIL',   lbl:'error capture',       col:'rgba(234,88,12,.45)',  wt:1.3 },
+  // Export to Azure Monitor — purple
+  { s:'C_HEAD',   t:'ST_AI',    lbl:'traces + metrics',    col:'rgba(124,58,237,.65)', wt:2.0, ec:'#7c3aed' },
+  { s:'C_TAIL',   t:'ST_LA',    lbl:'structured logs',     col:'rgba(124,58,237,.65)', wt:2.0, ec:'#7c3aed' },
+  // Downstream
+  { s:'ST_LA',    t:'O_SENT',   lbl:'analytic rules',      col:'rgba(220,38,38,.6)',   wt:1.7, ec:'#dc2626' },
+  { s:'O_SENT',   t:'O_SOAR',   lbl:'incidents',           col:'rgba(220,38,38,.5)',   wt:1.4, ec:'#dc2626' },
+  { s:'ST_AI',    t:'O_SLO',    lbl:'burn-rate',           col:'rgba(234,88,12,.55)',  wt:1.5, ec:'#ea580c' },
+  { s:'ST_AI',    t:'O_KQL',    lbl:'metrics',             col:'rgba(124,58,237,.45)', wt:1.3 },
+  { s:'ST_LA',    t:'O_KQL',    lbl:'logs',                col:'rgba(124,58,237,.45)', wt:1.3 },
+  { s:'O_KQL',    t:'O_PBI',    lbl:'dashboards',          col:'rgba(124,58,237,.45)', wt:1.3 },
+  { s:'ST_LA',    t:'O_SCHEMA', lbl:'schema enforce',      col:'rgba(22,163,74,.4)',   wt:1.1 },
 ];
 
-function _buildTelD3(showModal) {
-  const container = document.getElementById('tel-d3-wrap');
-  if (!container) return;
-  if (!window.d3) {
-    const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js';
-    s.onload = () => _buildTelD3(showModal);
-    document.head.appendChild(s);
-    return;
+// ── TEL_DETAIL — rich data for GSP side panel ─────────────────────────────────
+// (Declared here so it's co-located with the diagram; TEL_HOPS in ext.js is dead)
+
+function _renderTelSVG(wrap) {
+  const W = wrap.clientWidth  || 1100;
+  const H = wrap.clientHeight || 640;
+  wrap.innerHTML = '';
+
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(SVG_NS,'svg');
+  svg.setAttribute('width',W); svg.setAttribute('height',H);
+  svg.style.cssText = 'display:block;background:#ffffff;';
+  wrap.appendChild(svg);
+
+  // defs — drop shadow + hover glow filters only, NO markers
+  const defs = document.createElementNS(SVG_NS,'defs');
+  svg.appendChild(defs);
+  function mkFilter(id, content) {
+    const f=document.createElementNS(SVG_NS,'filter');
+    f.setAttribute('id',id); f.setAttribute('x','-30%'); f.setAttribute('y','-30%');
+    f.setAttribute('width','160%'); f.setAttribute('height','160%');
+    f.innerHTML=content; defs.appendChild(f);
   }
-  _renderTelSVG(container, showModal);
-  if (container._ro) container._ro.disconnect();
-  container._ro = new ResizeObserver(() => _renderTelSVG(container, showModal));
-  container._ro.observe(container);
-}
+  mkFilter('tds','<feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="rgba(0,0,0,.10)"/>');
+  mkFilter('thv','<feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>');
 
-function _renderTelSVG(container, showModal) {
-  const d3 = window.d3;
-  const W = container.clientWidth  || 1400;
-  const H = container.clientHeight || 700;
-  container.innerHTML = '';
+  const NCOLS=7, HPAD=14, LANE_HDR=34;
+  const colW=(W-HPAD*2)/NCOLS;
+  function cx(ci){ return HPAD+ci*colW+colW/2; }
 
-  // ── Swim-lane config ──
-  const LANES = [
-    { label:'PORTAL & CHANNELS',  col:'#3b82f6', cols:[0] },
-    { label:'API GATEWAY',         col:'#f97316', cols:[1] },
-    { label:'APP SERVICES',        col:'#06b6d4', cols:[2] },
-    { label:'DATA / MESSAGING',    col:'#22c55e', cols:[3] },
-    { label:'OTEL COLLECTION',     col:'#f97316', cols:[4] },
-    { label:'AZURE MONITOR',       col:'#8b5cf6', cols:[5] },
-    { label:'OUTPUTS',             col:'#ef4444', cols:[6] },
-  ];
-  const NCOLS = 7;
-  const HPAD = 12;
-  const LANE_HDR = 32;
-  const colW = (W - HPAD*2) / NCOLS;
-  function cx(ci) { return HPAD + ci*colW + colW/2; }
-
-  // ── Per-column node y-positions ──
-  // Group nodes by col_idx, space them evenly between LANE_HDR and H
-  const byCol = {};
-  TEL_NODES_DATA.forEach(n => {
-    if(!byCol[n.col_idx]) byCol[n.col_idx] = [];
-    byCol[n.col_idx].push(n);
-  });
-  const NW = Math.min(colW * 0.72, 115);
-  const NH = 38;
-  const nodePos = {};
-  Object.entries(byCol).forEach(([ci, nodes]) => {
-    const usable = H - LANE_HDR - 20;
-    const step = usable / (nodes.length + 1);
-    nodes.forEach((n, i) => {
-      nodePos[n.id] = { x: cx(+ci), y: LANE_HDR + step*(i+1) };
+  // y-positions per column
+  const byCol={};
+  TEL_NODES_DATA.forEach(n=>{ (byCol[n.col_idx]||(byCol[n.col_idx]=[])).push(n); });
+  const NW=Math.min(colW*0.74,114), NH=38;
+  const nodePos={};
+  Object.entries(byCol).forEach(([ci,nodes])=>{
+    const usable=H-LANE_HDR-20;
+    nodes.forEach((n,i)=>{
+      nodePos[n.id]={ x:cx(+ci), y:LANE_HDR+(usable/(nodes.length+1))*(i+1) };
     });
   });
 
-  // ── SVG ──
-  const svg = d3.select(container).append('svg')
-    .attr('width', W).attr('height', H)
-    .style('display','block').style('background','#080807');
-
-  const defs = svg.append('defs');
-
-  // glow filter
-  const gf = defs.append('filter').attr('id','tg').attr('x','-40%').attr('y','-40%').attr('width','180%').attr('height','180%');
-  gf.append('feGaussianBlur').attr('stdDeviation','3.5').attr('result','b');
-  const gfm = gf.append('feMerge');
-  gfm.append('feMergeNode').attr('in','b');
-  gfm.append('feMergeNode').attr('in','SourceGraphic');
-
-  // arrowheads
-  const ARR = { white:'rgba(255,255,255,.6)', orange:'#f97316', purple:'#8b5cf6', red:'#ef4444', green:'#22c55e', amber:'#f59e0b', pink:'#ec4899' };
-  const MWA=8, MHA=6;
-  Object.entries(ARR).forEach(([name,col]) => {
-    defs.append('marker').attr('id',`ta-${name}`)
-      .attr('markerWidth',MWA).attr('markerHeight',MHA)
-      .attr('refX',MWA).attr('refY',MHA/2).attr('orient','auto')
-      .append('path').attr('d',`M0,0 L0,${MHA} L${MWA},${MHA/2} z`).attr('fill',col);
-  });
-  function arrId(ec, col) {
-    const src = ec||col||'';
-    if(src.includes('249,115') || src==='#f97316') return 'ta-orange';
-    if(src.includes('139,92')  || src==='#8b5cf6') return 'ta-purple';
-    if(src.includes('239,68')  || src==='#ef4444') return 'ta-red';
-    if(src.includes('34,197')  || src==='#22c55e') return 'ta-green';
-    if(src.includes('245,158') || src==='#f59e0b') return 'ta-amber';
-    if(src.includes('236,72')  || src==='#ec4899') return 'ta-pink';
-    return 'ta-white';
+  function svgEl(tag,attrs,text){
+    const e=document.createElementNS(SVG_NS,tag);
+    if(attrs) Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));
+    if(text!==undefined) e.textContent=text;
+    return e;
   }
 
-  // ── Swim-lane backgrounds ──
-  const laneG = svg.append('g');
-  LANES.forEach((lane, li) => {
-    const x0 = HPAD + li*colW;
-    laneG.append('rect')
-      .attr('x',x0).attr('y',0).attr('width',colW).attr('height',H)
-      .attr('fill',`${lane.col}0d`).attr('stroke',`${lane.col}22`).attr('stroke-width',1);
-    laneG.append('rect')
-      .attr('x',x0).attr('y',0).attr('width',colW).attr('height',LANE_HDR)
-      .attr('fill',`${lane.col}2a`);
-    laneG.append('text')
-      .attr('x',x0+colW/2).attr('y',LANE_HDR/2+1)
-      .attr('text-anchor','middle').attr('dominant-baseline','central')
-      .attr('font-size', Math.max(6, Math.min(9.5, colW/lane.label.length*1.1)))
-      .attr('font-family','JetBrains Mono,monospace').attr('font-weight','800')
-      .attr('letter-spacing','0.06em').attr('fill',`${lane.col}cc`)
-      .attr('pointer-events','none').text(lane.label);
+  // ── Lane backgrounds ──
+  const LANES=[
+    {label:'PORTAL &\nCHANNELS',  col:'#2563eb'},
+    {label:'API GATEWAY',          col:'#ea580c'},
+    {label:'APP SERVICES',         col:'#0891b2'},
+    {label:'DATA /\nMESSAGING',    col:'#16a34a'},
+    {label:'OTEL\nCOLLECTION',     col:'#ea580c'},
+    {label:'AZURE\nMONITOR',       col:'#7c3aed'},
+    {label:'OUTPUTS',              col:'#dc2626'},
+  ];
+  function hexA(hex,a){
+    try{const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return `rgba(${r},${g},${b},${a})`;}catch{return hex;}
+  }
+
+  const lanesG=svgEl('g'); svg.appendChild(lanesG);
+  LANES.forEach((lane,li)=>{
+    const x0=HPAD+li*colW;
+    lanesG.appendChild(svgEl('rect',{x:x0+1,y:0,width:colW-2,height:H,fill:hexA(lane.col,.05)}));
+    if(li>0) lanesG.appendChild(svgEl('line',{x1:x0,y1:0,x2:x0,y2:H,stroke:'rgba(0,0,0,.06)','stroke-width':1}));
+    lanesG.appendChild(svgEl('rect',{x:x0,y:0,width:colW,height:LANE_HDR,fill:hexA(lane.col,.12)}));
+    lanesG.appendChild(svgEl('line',{x1:HPAD,y1:LANE_HDR,x2:W-HPAD,y2:LANE_HDR,stroke:'rgba(0,0,0,.08)','stroke-width':1}));
+    const lblLines=lane.label.split('\n');
+    lblLines.forEach((ln,li2)=>{
+      const fs=Math.max(6.5,Math.min(9.5,colW/(Math.max(...lane.label.split('\n').map(l=>l.length))+2)*1.5));
+      lanesG.appendChild(svgEl('text',{
+        x:x0+colW/2, y:LANE_HDR/2+(li2-(lblLines.length-1)/2)*10+1,
+        'text-anchor':'middle','dominant-baseline':'central',
+        'font-size':fs,'font-family':'JetBrains Mono,monospace',
+        'font-weight':'800','letter-spacing':'0.05em',
+        fill:lane.col,opacity:0.8,'pointer-events':'none'
+      },ln));
+    });
   });
 
-  // ── Main zoom/pan group ──
-  const g = svg.append('g');
+  // ── Inner g for pan/zoom ──
+  const inner=svgEl('g',{id:'tel-inner'});
+  svg.appendChild(inner);
+
+  // Pre-compute parallel edge offsets
+  const pc={},pi={};
+  TEL_EDGES_DATA.forEach(e=>{ const k=[e.s,e.t].sort().join('|'); pc[k]=(pc[k]||0)+1; });
+  TEL_EDGES_DATA.forEach(e=>{ const k=[e.s,e.t].sort().join('|'); pi[k]=pi[k]||0; e._pi=pi[k]++; e._pt=pc[k]; });
+
+  const PULL=NH/2+4;
 
   // ── Edges ──
-  // Pre-compute pair offsets for parallel edges between same column pair
-  const pairCount={}, pairIdx2={};
   TEL_EDGES_DATA.forEach(e=>{
-    const k=[e.s,e.t].sort().join('|');
-    pairCount[k]=(pairCount[k]||0)+1;
-  });
-  TEL_EDGES_DATA.forEach(e=>{
-    const k=[e.s,e.t].sort().join('|');
-    pairIdx2[k]=pairIdx2[k]||0;
-    e._pi=pairIdx2[k]++;
-    e._pt=pairCount[k];
-  });
-
-  const PULL = NH/2 + 4; // shorten path end so arrowhead lands at node edge
-
-  const edgeG = g.append('g');
-  TEL_EDGES_DATA.forEach(e => {
     const sp=nodePos[e.s], tp=nodePos[e.t]; if(!sp||!tp) return;
     const dx=tp.x-sp.x, dy=tp.y-sp.y, len=Math.sqrt(dx*dx+dy*dy)||1;
     const bx=sp.x+(dx/len)*PULL, by=sp.y+(dy/len)*PULL;
     const ex=tp.x-(dx/len)*PULL, ey=tp.y-(dy/len)*PULL;
-    const offset=(e._pi-(e._pt-1)/2)*18;
-    const cpx=(bx+ex)/2-(dy/len)*offset;
-    const cpy=(by+ey)/2+(dx/len)*offset;
+    const offset=(e._pi-(e._pt-1)/2)*15;
+    const cpx=(bx+ex)/2-(dy/len)*offset, cpy=(by+ey)/2+(dx/len)*offset;
+    const tang=Math.atan2(ey-cpy,ex-cpx);
     const pd=`M${bx},${by} Q${cpx},${cpy} ${ex},${ey}`;
-    const aid=arrId(e.ec, e.col);
 
-    // glow behind prominent edges
-    if((e.wt||1)>=1.8){
-      edgeG.append('path').attr('d',pd).attr('fill','none')
-        .attr('stroke',e.ec||e.col).attr('stroke-width',(e.wt||1)+4)
-        .attr('opacity',0.12).attr('pointer-events','none');
-    }
-    edgeG.append('path').attr('d',pd).attr('fill','none')
-      .attr('stroke',e.col).attr('stroke-width',e.wt||1.4)
-      .attr('stroke-dasharray',e.dashed?'5,4':null)
-      .attr('marker-end',`url(#${aid})`).attr('opacity',1);
-
+    const eg=svgEl('g');
+    inner.appendChild(eg);
+    // hit zone
+    eg.appendChild(svgEl('path',{d:pd,fill:'none',stroke:'transparent','stroke-width':14}));
+    // line
+    const dashArr=e.dashed?'5,4':null;
+    const pathEl=svgEl('path',{d:pd,fill:'none',stroke:e.col,'stroke-width':e.wt||1.3,'stroke-linecap':'round',opacity:1});
+    if(dashArr) pathEl.setAttribute('stroke-dasharray',dashArr);
+    eg.appendChild(pathEl);
+    // arrowhead polygon — inline, no markers
+    const cos=Math.cos(tang), sin=Math.sin(tang);
+    const AH=6, AW=2.8;
+    const pts=[
+      [0,0],[-(AH),AW],[-(AH),-AW]
+    ].map(([px,py])=>`${ex+px*cos-py*sin},${ey+px*sin+py*cos}`).join(' ');
+    eg.appendChild(svgEl('polygon',{
+      points:pts, fill:e.ec||e.col, opacity:0.8
+    }));
+    // label
     if(e.lbl){
-      const mx=0.25*bx+0.5*cpx+0.25*ex;
-      const my=0.25*by+0.5*cpy+0.25*ey-4;
-      const ll=e.lbl.length*3.8+10;
-      edgeG.append('rect')
-        .attr('x',mx-ll/2).attr('y',my-7).attr('width',ll).attr('height',12)
-        .attr('rx',3).attr('fill','#080807').attr('opacity',.88).attr('pointer-events','none');
-      edgeG.append('text')
-        .attr('x',mx).attr('y',my+1).attr('text-anchor','middle').attr('dominant-baseline','central')
-        .attr('font-size',6.5).attr('font-family','JetBrains Mono,monospace')
-        .attr('fill',e.ec?`${e.ec}cc`:'rgba(255,255,255,.38)').attr('pointer-events','none')
-        .text(e.lbl);
+      const mx=0.25*bx+0.5*cpx+0.25*ex, my=0.25*by+0.5*cpy+0.25*ey-4;
+      const ll=e.lbl.length*3.5+8;
+      eg.appendChild(svgEl('rect',{x:mx-ll/2,y:my-6,width:ll,height:11,rx:3,fill:'#ffffff',opacity:.92}));
+      eg.appendChild(svgEl('text',{
+        x:mx,y:my+1,'text-anchor':'middle','dominant-baseline':'central',
+        'font-size':6,'font-family':'JetBrains Mono,monospace',
+        fill:e.ec||'rgba(0,0,0,.4)','pointer-events':'none'
+      },e.lbl));
     }
   });
 
   // ── Nodes ──
-  const nodeG = g.append('g');
-  TEL_NODES_DATA.forEach(n => {
+  let activeNode=null;
+  TEL_NODES_DATA.forEach(n=>{
     const pos=nodePos[n.id]; if(!pos) return;
     const hasDet=!!TEL_DETAIL[n.id];
-    const grp=nodeG.append('g')
-      .attr('transform',`translate(${pos.x},${pos.y})`)
-      .style('cursor','pointer');
+    const g=svgEl('g',{transform:`translate(${pos.x},${pos.y})`,style:'cursor:pointer'});
+    inner.appendChild(g);
 
-    // glow ring (hover)
-    grp.append('rect').attr('class','tgr')
-      .attr('x',-NW/2-4).attr('y',-NH/2-4).attr('width',NW+8).attr('height',NH+8)
-      .attr('rx',11).attr('fill','none')
-      .attr('stroke',n.col).attr('stroke-width',2.5)
-      .attr('filter','url(#tg)').attr('opacity',0);
-
-    // main rect
-    grp.append('rect').attr('class','tnr')
-      .attr('x',-NW/2).attr('y',-NH/2).attr('width',NW).attr('height',NH)
-      .attr('rx',8)
-      .attr('fill',hexA2(n.col,.15))
-      .attr('stroke',n.col).attr('stroke-width',hasDet?2:1.4);
-
+    // shadow
+    g.appendChild(svgEl('rect',{x:-NW/2+1,y:-NH/2+2,width:NW,height:NH,rx:7,fill:hexA(n.col,.15),'pointer-events':'none'}));
+    // body
+    const rect=svgEl('rect',{x:-NW/2,y:-NH/2,width:NW,height:NH,rx:7,fill:'#ffffff',stroke:n.col,'stroke-width':hasDet?2:1.4,filter:'url(#tds)'});
+    g.appendChild(rect);
+    // left colour bar
+    g.appendChild(svgEl('rect',{x:-NW/2,y:-NH/2,width:4,height:NH,rx:7,fill:n.col,'pointer-events':'none'}));
+    g.appendChild(svgEl('rect',{x:-NW/2+2,y:-NH/2,width:4,height:NH,fill:'#ffffff','pointer-events':'none'}));
     // label
     const lines=n.label.split('\n');
-    const lh=lines.length>1?11:0;
     lines.forEach((ln,li)=>{
-      const fs=Math.max(7.5, Math.min(10.5, NW/(Math.max(...lines.map(l=>l.length))+1)*1.35));
-      grp.append('text')
-        .attr('text-anchor','middle').attr('dominant-baseline','central')
-        .attr('y',(li-(lines.length-1)/2)*lh)
-        .attr('font-size',fs).attr('font-family','JetBrains Mono,monospace')
-        .attr('font-weight','700').attr('fill','#f0f0ee').attr('pointer-events','none')
-        .text(ln);
+      const fs=Math.max(7.5,Math.min(10,NW*0.82/Math.max(...lines.map(l=>l.length))*1.1));
+      g.appendChild(svgEl('text',{
+        x:3,y:(li-(lines.length-1)/2)*11,'text-anchor':'middle','dominant-baseline':'central',
+        'font-size':fs,'font-family':'JetBrains Mono,monospace',
+        'font-weight':'700',fill:'#1a1a18','pointer-events':'none'
+      },ln));
+    });
+    // detail dot
+    if(hasDet) g.appendChild(svgEl('circle',{cx:NW/2-6,cy:-NH/2+6,r:3.5,fill:n.col,'pointer-events':'none'}));
+
+    // hover
+    g.addEventListener('mouseenter',()=>{
+      if(activeNode!==n.id){
+        rect.setAttribute('fill',hexA(n.col,.1));
+        rect.setAttribute('filter','url(#thv)');
+      }
+    });
+    g.addEventListener('mouseleave',()=>{
+      if(activeNode!==n.id){
+        rect.setAttribute('fill','#ffffff');
+        rect.setAttribute('filter','url(#tds)');
+      }
     });
 
-    // "has detail" indicator dot
-    grp.append('circle')
-      .attr('cx',NW/2-5).attr('cy',-NH/2+5).attr('r',4)
-      .attr('fill',hasDet?n.col:'rgba(255,255,255,.12)')
-      .attr('stroke',hasDet?'rgba(255,255,255,.3)':'none').attr('stroke-width',1);
-
-    grp.on('mouseenter',function(){
-      d3.select(this).select('.tnr').attr('fill',hexA2(n.col,.32)).attr('stroke-width',3);
-      d3.select(this).select('.tgr').attr('opacity',.55);
-    }).on('mouseleave',function(){
-      d3.select(this).select('.tnr').attr('fill',hexA2(n.col,.15)).attr('stroke-width',hasDet?2:1.4);
-      d3.select(this).select('.tgr').attr('opacity',0);
-    }).on('click',()=>showModal(n.id));
+    // click → GSP
+    g.addEventListener('click',e=>{
+      e.stopPropagation();
+      // reset previous
+      if(activeNode){
+        const prev=inner.querySelector(`[data-tel-id="${activeNode}"] rect`);
+        if(prev){ prev.setAttribute('fill','#ffffff'); prev.setAttribute('stroke-width',hasDet?2:1.4); }
+      }
+      activeNode=n.id;
+      rect.setAttribute('fill',hexA(n.col,.18));
+      rect.setAttribute('stroke-width',2.5);
+      rect.setAttribute('filter','url(#thv)');
+      _telOpenGSP(n);
+    });
+    g.setAttribute('data-tel-id',n.id);
   });
 
-  // ── Legend ──
-  const LEG=[
-    {col:'rgba(255,255,255,.55)',lbl:'Request path'},
-    {col:'#f97316',lbl:'OTel spans/metrics'},
-    {col:'#8b5cf6',lbl:'Monitor export'},
-    {col:'#ef4444',lbl:'SIEM / SecOps'},
-    {col:'#22c55e',lbl:'Data stores'},
+  // Legend
+  const legData=[
+    {col:'rgba(37,99,235,.5)',lbl:'Request path'},
+    {col:'#ea580c',           lbl:'OTel spans'},
+    {col:'#7c3aed',           lbl:'Monitor export'},
+    {col:'#dc2626',           lbl:'SIEM / SecOps'},
   ];
-  const legG=svg.append('g').attr('transform',`translate(${W/2},${H-10})`);
-  let lx=-(LEG.length*105)/2;
-  LEG.forEach(item=>{
-    legG.append('line').attr('x1',lx).attr('y1',0).attr('x2',lx+18).attr('y2',0)
-      .attr('stroke',item.col).attr('stroke-width',2.2);
-    legG.append('text').attr('x',lx+22).attr('y',1).attr('dominant-baseline','central')
-      .attr('font-size',7).attr('font-family','JetBrains Mono,monospace')
-      .attr('fill','rgba(255,255,255,.38)').text(item.lbl);
-    lx+=105;
+  const legG=svgEl('g',{transform:`translate(${W/2},${H-9})`});
+  svg.appendChild(legG);
+  let lx=-(legData.length*106)/2;
+  legData.forEach(item=>{
+    legG.appendChild(svgEl('line',{x1:lx,y1:0,x2:lx+16,y2:0,stroke:item.col,'stroke-width':2.2}));
+    legG.appendChild(svgEl('text',{x:lx+19,y:1,'dominant-baseline':'central','font-size':7,'font-family':'JetBrains Mono,monospace',fill:'#9a9990'},item.lbl));
+    lx+=106;
   });
+}
 
-  // ── Zoom + pan ──
-  const zoom=d3.zoom().scaleExtent([0.3,4])
-    .on('zoom',ev=>g.attr('transform',ev.transform));
-  svg.call(zoom).on('dblclick.zoom',null);
+function _telOpenGSP(node) {
+  const det = TEL_DETAIL[node.id];
+  if (!det) {
+    window.GSP && GSP.open({
+      color: node.col,
+      cat: node.group,
+      title: node.label.replace('\n',' '),
+      sub: node.group,
+      sections: [{ label:'Layer', type:'prose', body: `Component in the <strong>${node.group}</strong> telemetry layer.` }]
+    });
+    return;
+  }
+  const sections = [
+    { label:'Overview', type:'prose', body: det.plain },
+    { label:'Emitted Signals', type:'list', body: det.signals || [] },
+    { label:'Key Metrics & SLIs', type:'list', body: det.metrics || [] },
+  ];
+  window.GSP && GSP.open({
+    color: node.col,
+    cat: node.group,
+    title: det.t,
+    sub: node.label.replace('\n',' '),
+    sections
+  });
 }
 
 

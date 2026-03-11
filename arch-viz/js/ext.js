@@ -77,88 +77,29 @@ const TEL_DASHBOARDS = [
   { name:'Adapter Health', users:'SRE, Integration', desc:'Per-registry latency/error, CB states, throttle hits' },
   { name:'Queues & Retries', users:'SRE', desc:'Depth, age, retry rates, DLQ reasons' },
   { name:'Identity & Consent', users:'Security, Support', desc:'OIDC failures, RBAC denials, consent faults' },
-  { name:'Data Layer', users:'Data Eng', desc:'Postgres wait events, Redis ops/sec, Cosmos RU/429s' },
+  { name:'Data Layer', users:'Data Eng', desc:'SQL MI wait stats / DMVs, Redis ops/sec, Cosmos RU/429s' },
   { name:'Webhook Ingress', users:'SRE, Vendor mgmt', desc:'Signature failures, idempotency hits, provider deltas' },
   { name:'DR Readiness', users:'SRE', desc:'Replica lag gauges, region health, alias status' },
 ];
 
-function buildTelemetry() {
-  const flow = document.getElementById('tel-flow');
-  const detail = document.getElementById('tel-detail');
-  const dashWrap = document.getElementById('tel-dashboards');
-  if (!flow) return;
+function buildTelemetry() { /* replaced by ext2.js buildTelemetryDiagram */ }
 
-  TEL_HOPS.forEach((h, i) => {
-    const div = document.createElement('div');
-    div.className = 'tel-hop';
-    div.innerHTML = `
-      <div class="tel-hop-icon" style="background:${hexA4(h.color,0.12)};border:1.5px solid ${hexA4(h.color,0.35)}">${h.icon}</div>
-      <div style="flex:1">
-        <div class="tel-hop-title">${h.label}</div>
-        <div class="tel-hop-sub">${h.sub}</div>
-      </div>
-      <div style="font-family:var(--font-mono);font-size:.6rem;color:${h.color};opacity:.8">${h.id}</div>`;
-    div.addEventListener('click', () => {
-      flow.querySelectorAll('.tel-hop').forEach(x => x.classList.remove('active'));
-      div.classList.add('active');
-      renderTelDetail(h, detail);
-    });
-    flow.appendChild(div);
-    if (i < TEL_HOPS.length - 1) {
-      const arr = document.createElement('div');
-      arr.className = 'tel-arrow';
-      arr.textContent = '↓';
-      flow.appendChild(arr);
-    }
-  });
+// ── User Story data (reconstructed) ──────────────────────────────────────────
+const US_CATS = ['All','Core','Data','Documents','Integration','Architecture','Security','Portal','Registries','Resilience','Observability'];
 
-  if (dashWrap) {
-    TEL_DASHBOARDS.forEach(d => {
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)';
-      row.innerHTML = `
-        <div style="width:9px;height:9px;border-radius:2px;background:var(--accent);flex-shrink:0;margin-top:4px"></div>
-        <div>
-          <div style="font-size:.75rem;font-weight:700;color:var(--text-1)">${d.name}</div>
-          <div style="font-size:.68rem;color:var(--text-3)">${d.users}</div>
-          <div style="font-size:.71rem;color:var(--text-2);margin-top:2px">${d.desc}</div>
-        </div>`;
-      dashWrap.appendChild(row);
-    });
-  }
-}
-
-function renderTelDetail(h, wrap) {
-  wrap.innerHTML = `
-    <div style="border-left:3px solid ${h.color};padding-left:10px;margin-bottom:12px">
-      <div style="font-size:.65rem;color:var(--text-3);font-family:var(--font-mono);margin-bottom:2px">${h.id}</div>
-      <div style="font-size:.85rem;font-weight:700;color:var(--text-1)">${h.label}</div>
-    </div>
-    <div style="font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:5px;padding-bottom:3px;border-bottom:1px solid var(--border)">Emitted Signals</div>
-    <ul style="list-style:none;margin-bottom:10px">${h.signals.map(s=>`<li style="font-size:.73rem;color:var(--text-2);padding:3px 0 3px 14px;position:relative"><span style="position:absolute;left:0;color:${h.color}">→</span>${s}</li>`).join('')}</ul>
-    <div style="font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:5px;padding-bottom:3px;border-bottom:1px solid var(--border)">Key Metrics & SLIs</div>
-    <ul style="list-style:none;margin-bottom:10px">${h.metrics.map(m=>`<li style="font-size:.73rem;color:var(--text-2);padding:3px 0 3px 14px;position:relative"><span style="position:absolute;left:0;color:#16a34a">✓</span>${m}</li>`).join('')}</ul>
-    <div style="font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:4px;padding-bottom:3px;border-bottom:1px solid var(--border)">Export Destination</div>
-    <div style="font-size:.73rem;color:var(--text-2);margin-bottom:10px">${h.dest}</div>
-    <div style="display:flex;flex-wrap:wrap;gap:4px">${h.rfp.map(r=>`<span style="font-family:var(--font-mono);font-size:.59rem;padding:2px 7px;border-radius:3px;background:var(--orange-50);border:1px solid rgba(234,88,12,.2);color:var(--accent-dk)">RFP${r}</span>`).join('')}</div>`;
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// USER JOURNEYS
-// ══════════════════════════════════════════════════════════════════════════════
 const ARCH_NODES_MAP = {
-  // node-id → readable label
-  CLIENT:'End User', PORTAL:'Portal', SCHEMA:'UI Schema Svc', EID:'eID IdP (OIDC+PKCE)',
-  CONS:'Consent Service', CLAIMS:'Claims Mapper', APIM:'APIM Premium',
-  FACADE:'API Facade', ORCH:'Orchestrator', SEC:'SEC/Consent Gate', MAPVAL:'Map & Validate',
-  DQ:'Data Quality', MDM:'MDM Cache (Redis)', RULES:'Rules Engine', EVENT:'Event Backbone',
-  DLQ:'Dead Letter Queue', AUDIT:'Audit (WORM)', AD_CIV:'Adapter: Civil',
-  AD_ADDR:'Adapter: Address', AD_BUS:'Adapter: Business', AD_LIC:'Adapter: License',
-  AD_TAX:'Adapter: Tax', AD_LAND:'Adapter: Land/Kadaster', ESIGN:'eSign Provider',
-  PAY:'Payment Gateway', DOCI:'Document Intake', CASESYS:'Case Management',
-  APPLOGS:'App Insights / Log Analytics', SENT:'Sentinel (SIEM)',
-  ODS_PG:'PostgreSQL ODS', COSMOS:'Cosmos DB', REDIS:'Redis Enterprise',
-  BRONZE:'Bronze Layer', SILVER:'Silver Layer', GOLD:'Gold Layer', PBI:'Power BI'
+  CLIENT:'Citizen/User', PORTAL:'Portal SPA', SCHEMA:'Form Schema', EID:'eID IdP',
+  CONS:'Consent Service', CLAIMS:'Claims Mapper', APIM:'API Management',
+  FACADE:'API Facade', ORCH:'Orchestrator', SEC:'Consent Gate', MAPVAL:'Mapping+DQ',
+  DQ:'Data Quality', MDM:'MDM Cache', RULES:'Rules Engine', EVENT:'Service Bus',
+  DLQ:'Dead Letter Q', AUDIT:'Audit WORM', AD_CIV:'Civil Adapter',
+  AD_ADDR:'Address Adapter', AD_BUS:'Business Adapter', AD_LIC:'License Adapter',
+  AD_TAX:'Tax Adapter', AD_LAND:'Land Adapter', ESIGN:'eSign Provider',
+  PAY:'Payment GW', DOCI:'Doc Intake', CASESYS:'Case System',
+  APPLOGS:'App Insights', SENT:'Sentinel', ODS_PG:'Azure SQL MI ODS',
+  COSMOS:'Cosmos DB', REDIS:'Redis MDM', BRONZE:'Bronze Lake',
+  SILVER:'Silver Lake', GOLD:'Gold Lake', FABWH:'Fabric Warehouse',
+  PBI:'Power BI', PURVIEW:'Purview',
 };
 
 const USER_STORIES = [
@@ -230,7 +171,7 @@ const USER_STORIES = [
     purpose:'Coordinate multi-step workflows (consent → fetch → docs → eSign → pay → submit) with compensation on failure.',
     happy:'Orchestrator persists saga state to ODS → execute steps in sequence (each idempotent) → publish events on each step → on all steps complete → publish submitted event',
     failures:['Transient step failure → retry with exponential backoff → compensate on max retries → DLQ with full saga state for operator re-drive','Step timeout → mark timed-out → operator review'],
-    controls:['Idempotent saga steps', 'Compensation transactions (undo)', 'Saga state persisted to PostgreSQL (PITR-recoverable)', 'DLQ with full context'],
+    controls:['Idempotent saga steps', 'Compensation transactions (undo)', 'Saga state persisted to Azure SQL MI (PITR-recoverable)', 'DLQ with full context'],
     slo:'Saga completion success rate ≥ 99.5%',
     nodes:['ORCH','EVENT','DLQ','ODS_PG','AUDIT'],
     rfp:['-02','-08'], nfr:['NFR-06','NFR-15'] },
@@ -460,15 +401,14 @@ const USER_STORIES = [
     rfp:['-08','-09'], nfr:['NFR-06','NFR-24'] },
   { id:'US-38', title:'Disaster Recovery — Regional Failover', cat:'Resilience', color:'#8b5cf6',
     purpose:'Restore full service in Region B within RPO ≤ 5min data loss and RTO ≤ 60min downtime after a regional failure.',
-    happy:'Region A failure detected → Front Door health probe fails → origin switched to Region B APIM → Region B Container Apps warmed up → PostgreSQL replica promoted → Service Bus alias switched → Cosmos auto-failover → smoke tests pass → traffic live in Region B',
-    failures:['Postgres promotion takes > 30min → RTO risk → escalate → run manual promotion steps','Cosmos auto-failover not triggered → manual failover via portal + CLI → alert data team','Split-brain avoided by single-writer promotion procedure (only one primary at a time)'],
-    controls:['RPO ≤ 5min (PostgreSQL WAL lag monitoring)', 'RTO ≤ 60min (runbook + pre-warmed Region B)', 'Front Door origin health probes every 30s', 'Quarterly DR drill with signed report (NFR-07)'],
+    happy:'Region A failure detected → Front Door health probe fails → origin switched to Region B APIM → Region B Container Apps warmed up → SQL MI secondary replica promoted → Service Bus alias switched → Cosmos auto-failover → smoke tests pass → traffic live in Region B',
+    failures:['SQL MI failover group promotion takes > 30min → RTO risk → escalate → run manual promotion steps','Cosmos auto-failover not triggered → manual failover via portal + CLI → alert data team','Split-brain avoided by single-writer promotion procedure (only one primary at a time)'],
+    controls:['RPO ≤ 5min (SQL MI auto-failover lag monitoring)', 'RTO ≤ 60min (runbook + pre-warmed Region B)', 'Front Door origin health probes every 30s', 'Quarterly DR drill with signed report (NFR-07)'],
     slo:'RPO ≤ 5min · RTO ≤ 60min (NFR-07)',
     nodes:['APIM','FACADE','ORCH','ODS_PG','COSMOS','REDIS','EVENT','AUDIT'],
     rfp:['-11','-09'], nfr:['NFR-07'] }
 ];
 
-const US_CATS = ['All','Core','Security','Data','Integration','Documents','Portal','Registries','Resilience','Observability','Architecture'];
 
 function buildUserJourneys() {
   const grid = document.getElementById('us-grid');
@@ -571,8 +511,8 @@ const NFRS = [
     detail:'Retry policy: 3 attempts, exponential backoff 250ms/1s/4s with ±20% jitter. Only applied to idempotent operations (GET, idempotent PUT). On max retry exhaustion: park to DLQ with full context. Chaos test baseline: 20% error injection → 95%+ of requests eventually succeed within budget.',
     enabler:'Polly resilience library in adapter clients + Service Bus retry policy + KEDA-based consumer autoscale', us:['US-36','US-37'] },
   { id:'NFR-07', cat:'DR', req:'RPO and RTO targets', target:'RPO ≤ 5min · RTO ≤ 60min', metric:'DB WAL replication lag (RPO) + DR drill total time (RTO)', accept:'Quarterly DR drill; signed report; SLO green after failover', priority:'Must', rfp:'-11',
-    detail:'RPO: PostgreSQL WAL streaming replication lag to Region B replica monitored every 30s. Alert if lag > 3min. Cosmos DB continuous backup RPO ≈ seconds. RTO: Front Door origin switch < 5min + Container Apps warm-start < 15min + PostgreSQL promotion < 30min (runbook) + smoke tests < 10min = 60min budget.',
-    enabler:'PostgreSQL geo-replica + Cosmos multi-region + Service Bus Geo-DR + Front Door origin swap', us:['US-38'] },
+    detail:'RPO: Azure SQL MI auto-failover group secondary lag to Region B monitored every 30s. Alert if lag > 3min. Cosmos DB continuous backup RPO ≈ seconds. RTO: Front Door origin switch < 5min + Container Apps warm-start < 15min + SQL MI failover group promotion < 30min (runbook) + smoke tests < 10min = 60min budget.',
+    enabler:'Azure SQL MI Auto-Failover Group + Cosmos multi-region + Service Bus Geo-DR + Front Door origin swap', us:['US-38'] },
   { id:'NFR-08', cat:'Scalability', req:'Horizontal autoscale headroom', target:'≥ 20% capacity headroom at peak', metric:'HPA / APIM autoscale metrics at peak load', accept:'Peak event test: 2× normal RPS for 15min; verify no queue saturation > 10s', priority:'Must', rfp:'-09',
     detail:'KEDA scales Container Apps on: HTTP concurrency (APIM → Facade), queue depth (Service Bus → Controllers), CPU/memory. APIM units sized for peak + 20% headroom. Load test must demonstrate: at 2× peak, queue lag stays < 10s and P95 latency stays within SLO × 1.5.',
     enabler:'KEDA on Container Apps + APIM Premium autoscale units + Service Bus TU autoscale', us:['US-9'] },
@@ -596,7 +536,7 @@ const NFRS = [
     enabler:'Facade error handling middleware + controller exception mapper + problem+json serializer', us:['US-8'] },
   { id:'NFR-15', cat:'Idempotency', req:'Mutating APIs honour Idempotency-Key', target:'100% of POST/PUT honour the key', metric:'Idempotency ledger hit vs repeat outcome', accept:'Replay tests: send same request with same key twice; second must return first response without side effects', priority:'Must', rfp:'-08',
     detail:'Idempotency-Key (UUID) required for: POST /applications, POST /esign/packages, POST /payments/sessions, POST /drafts. Ledger in ODS stores: key, requestHash, responseStatus, responseBody (compressed), createdAt (TTL 24h). On key match: return stored response without re-executing. On body mismatch: 422 idempotency_key_reuse.',
-    enabler:'Facade idempotency-key middleware + ODS ledger table + key TTL management', us:['US-2','US-4','US-24'] },
+    enabler:'Facade idempotency-key middleware + SQL MI ledger table + key TTL management', us:['US-2','US-4','US-24'] },
   { id:'NFR-16', cat:'Cache', req:'MDM cache hit-rate for prefill', target:'≥ 80%', metric:'Redis cache hit counter / total prefill requests', accept:'Load + warmup test: 1000 requests after warm-up; measure hit-rate', priority:'Should', rfp:'-05',
     detail:'Hit-rate measured per 24h rolling window. Warmup: on first prefill for each NID, cache populated; subsequent requests within TTL hit. TTL varies by data type (address: 24h, business: 4h, civil status: 48h). Event-driven invalidation maintains freshness. Alert if 24h rolling hit-rate < 75%.',
     enabler:'Redis Enterprise MDM cache + ETag/TTL policy + event-driven invalidation', us:['US-1','US-28','US-5','US-29'] },
@@ -608,10 +548,10 @@ const NFRS = [
     enabler:'Facade webhook verifier + Redis nonce store + Key Vault signing secrets + APIM IP allowlist', us:['US-4','US-21','US-22'] },
   { id:'NFR-19', cat:'Accessibility', req:'WCAG 2.1 AA conformance', target:'Conformant', metric:'Axe automated scan + manual audit', accept:'Third-party accessibility audit report; no Critical/High issues', priority:'Should', rfp:'-01',
     detail:'WCAG 2.1 AA covers 4 principles: Perceivable (alt text, captions, contrast ≥ 4.5:1), Operable (keyboard nav, no traps, skip links), Understandable (error identification, lang attribute), Robust (valid HTML, ARIA roles). Axe CI gate: 0 critical violations. Manual test: NVDA + JAWS + VoiceOver on key journeys.',
-    enabler:'React/HTML accessible component library + Axe CI gate + schema-driven form renderer', us:['US-13'] },
+    enabler:'Blazor / Razor Pages accessible component library + Axe CI gate + schema-driven form renderer', us:['US-13'] },
   { id:'NFR-20', cat:'Localization', req:'EN/NL full parity', target:'100% strings', metric:'i18n coverage report (missing key count)', accept:'i18n lint in CI: 0 missing keys. Manual review of NL translations by native speaker.', priority:'Should', rfp:'-01',
     detail:'All user-facing strings externalised in JSON locale files (en.json, nl.json). i18n lint runs in CI: fails if NL file is missing any key present in EN file. Date, number, currency formatting via Intl API with locale context. Content team owns translations; engineering owns technical string keys.',
-    enabler:'i18n framework (react-i18next) + schema-driven form labels + CI lint gate', us:['US-13'] },
+    enabler:'i18n framework (.NET IStringLocalizer / resource files) + schema-driven form labels + CI lint gate', us:['US-13'] },
   { id:'NFR-21', cat:'Data', req:'Retention & legal holds', target:'Per §8.8 schedule', metric:'Purview retention policies + WORM lock verification', accept:'Policy test: drafts > 180d auto-deleted; consent records 7y; audit 7-10y; logs 90-180d', priority:'Must', rfp:'-05, -12',
     detail:'Retention schedule: Drafts 180d (soft delete then purge), Consent records 7y (WORM), Audit/WORM receipts 7-10y (WORM legal hold available), Application logs 90d (Log Analytics), Security logs 180d (Sentinel), MDM cache TTL per data type. Purview DLP policies enforce classification and access. Legal hold API available for litigation support.',
     enabler:'Blob WORM immutability + Purview retention policies + ODS soft-delete + Log Analytics workspace retention', us:['US-21'] },
@@ -625,8 +565,8 @@ const NFRS = [
     detail:'Service Bus Premium with partitioned topics for parallelism. KEDA scales consumers on queue depth: scale trigger = 10 messages → add replica. Scale-to-zero when idle. Lag alert: P95 > 10s = PagerDuty. Lag > 4h in DLQ = PagerDuty. Throughput units auto-scale on Server Busy (429) responses.',
     enabler:'Service Bus Premium + KEDA queue-depth autoscale + partitioned topics + TU autoscale', us:['US-9','US-37'] },
   { id:'NFR-25', cat:'Data integrity', req:'ETag prevents lost updates', target:'100% conditional ops honoured', metric:'412_rate when ETag mismatched / total conditional updates', accept:'Concurrency tests: 2 concurrent updates with same ETag → exactly 1 succeeds, 1 gets 412', priority:'Should', rfp:'-05',
-    detail:'Conditional update flow: GET /drafts/{id} returns ETag header → PUT /drafts/{id} with If-Match: {etag} → ODS checks: SELECT FOR UPDATE WHERE etag = ? → if mismatch: 412 Precondition Failed → client must GET fresh state. Same pattern for MDM cache snapshots. 0% ETag bypass.',
-    enabler:'ODS conditional update query (SELECT FOR UPDATE + etag column) + Facade If-Match enforcement', us:['US-5','US-12','US-29'] },
+    detail:'Conditional update flow: GET /drafts/{id} returns ETag header → PUT /drafts/{id} with If-Match: {etag} → ODS checks: UPDATE with optimistic concurrency (rowversion/ETag) → if mismatch: 412 Precondition Failed → client must GET fresh state. Same pattern for MDM cache snapshots. 0% ETag bypass.',
+    enabler:'ODS conditional update query (EF Core rowversion concurrency token + ETag column) + Facade If-Match enforcement', us:['US-5','US-12','US-29'] },
   { id:'NFR-26', cat:'Cost', req:'Autoscale + budgets within plan', target:'≤ planned monthly budget', metric:'Azure Cost Management: actual vs planned by service tag', accept:'Monthly FinOps review; alert on >110% of budget', priority:'Could', rfp:'-09',
     detail:'Cost controls: non-Prod environments scaled to business hours (scale-to-zero off-hours), budget alerts at 80% and 100% of monthly envelope, Azure Policy enforces resource tags (costCenter, env, service), Power BI FinOps dashboard tracks per-service spend, commitment discounts on compute.',
     enabler:'KEDA scale-to-zero + budget alerts + Azure Policy tag enforcement + reserved instances', us:[] },
@@ -635,7 +575,7 @@ const NFRS = [
     enabler:'Playwright multi-browser CI matrix + BrowserStack for physical device testing', us:['US-13'] },
   { id:'NFR-28', cat:'Mobile', req:'PWA performance', target:'Lighthouse PWA score ≥ 90', metric:'Lighthouse CI score', accept:'CI gate: Lighthouse PWA ≥ 90 on mobile profile', priority:'Should', rfp:'-01',
     detail:'Portal built as Progressive Web App: service worker for offline form saving, manifest for home screen install, HTTPS-only, responsive layout, ARIA-compliant, performance budget: FCP < 2s, TTI < 3.5s on 4G mobile. Lighthouse CI runs on every PR targeting main.',
-    enabler:'React PWA template + Workbox service worker + responsive CSS + Lighthouse CI GitHub Action', us:['US-13'] },
+    enabler:'.NET Blazor PWA template + Blazor PWA service worker + responsive CSS + Lighthouse CI GitHub Action (.NET pipeline)', us:['US-13'] },
   { id:'NFR-29', cat:'Maintainability', req:'Lead time: code to production', target:'< 1 day (business hours)', metric:'DORA metric: commit timestamp to prod deploy timestamp', accept:'Pipeline report: median lead time tracked in DORA dashboard', priority:'Should', rfp:'-09',
     detail:'Enabled by: automated CI/CD pipeline (build + test + scan + sign = < 20min), automated Dev/Int/Perf deployment, Stage manual approval (< 2h on business day), Prod canary rollout (< 2h). Total target: commit 09:00 → Prod 17:00. DORA dashboard in Power BI with 30-day rolling average.',
     enabler:'Fully automated pipeline + small PRs policy + blue/green zero-downtime deploy', us:[] },
@@ -801,13 +741,20 @@ const PIPE_STAGES = [
     outputs:['k6 / Gatling HTML report with P50/P95/P99 charts', 'Chaos experiment outcomes (pass/fail per scenario)', 'App Insights performance dashboard screenshot (PDF)', 'SLO breach count = 0 (required for gate)'],
     gates:['NFR-01: P95 ≤ 600ms at sustained 600 RPS', 'NFR-06: retry success ≥ 95% under 20% fault injection', 'NFR-24: queue lag P95 < 2s', 'All chaos scenarios: graceful degrade confirmed (no 500 on total failure)'],
     rfp:['-08','-09'] },
-  { id:'STAGE', label:'Deploy Stage (Blue/Green)', sub:'Blue/Green + UAT + Pen-test', color:'#8b5cf6', icon:'🔵',
-    what:'Deploy new version to Stage Green slot behind APIM. Run UAT with business stakeholders using masked production data subset. Conduct DAST (OWASP ZAP) pen-test. Security Lead reviews before promotion approval.',
-    inputs:['Signed image from ACR', 'Masked prod data subset (via Fabric anonymisation pipeline)', 'UAT test scripts (business scenarios)', 'ZAP DAST scan configuration'],
-    checks:['Blue/Green: deploy Green slot → Container Apps traffic split: Green 0% initially', 'APIM canary: x-api-canary: true header routes subset of traffic to Green', 'DAST (OWASP ZAP): full scan against Stage Green → OWASP Top 10 + header checks + CORS', 'UAT: Business PO signs off each scenario (prefill, eligibility, docs, eSign, pay, submit, case)', 'SLO soak: 7 days of steady traffic on Stage → SLO dashboards green'],
-    outputs:['ZAP DAST report', 'UAT sign-off sheets per scenario', 'Stage SLO dashboard (7-day report)', 'Security Lead sign-off email/ticket'],
-    gates:['DAST: 0 Critical/High security findings open', 'UAT: Business PO sign-off on all priority-1 scenarios', 'SLO green for 7 days on Stage', 'Security Lead approval for API/security-critical changes'],
-    rfp:['-03','-09'] },
+  { id:'UAT', label:'UAT', sub:'Business acceptance — Azure UAT env', color:'#8b5cf6', icon:'👥',
+    what:'User Acceptance Testing on a dedicated UAT environment with masked production data. Business Product Owners and key users validate all service journeys against acceptance criteria. UAT is gate-controlled — pipeline cannot advance to Staging without formal sign-off.',
+    inputs:['Signed image from ACR (same as Perf)', 'Masked/anonymised prod data subset (via Fabric anonymisation pipeline)', 'UAT test scripts per user story (US-1…US-38)', 'Business PO + UAT participants (scheduled sessions)'],
+    checks:['Deploy to UAT Container Apps environment (dedicated, isolated)', 'Execute all 38 user story acceptance scenarios (happy + failure paths)', 'Verify EN/NL localisation with native-speaking testers', 'Accessibility check: manual NVDA + VoiceOver test on key journeys', 'Business rule validation: eligibility outcomes match expected decisions', 'Performance perception check: UI feels fast under normal load'],
+    outputs:['UAT test report (pass/fail per US)', 'PO sign-off record per priority-1 story', 'UAT defect log (blockers must be fixed before Staging)', 'Localisation review notes'],
+    gates:['All P0/P1 user stories: UAT pass', 'Business PO formal sign-off (ticket/email)', '0 blocker defects open', 'Accessibility: no critical WCAG violations found in manual test'],
+    rfp:['-01','-03','-06'] },
+  { id:'STAGING', label:'Staging', sub:'Pre-prod — Blue/Green + DAST + Pen-test', color:'#7c3aed', icon:'🔵',
+    what:'Deploy to Staging (pre-production) environment with Blue/Green slot strategy. Run OWASP ZAP DAST scan, conduct scheduled pen-test for major releases. Security Lead must approve before promotion. 7-day SLO soak confirms production readiness.',
+    inputs:['UAT-approved signed image from ACR', 'Staging environment configuration (Key Vault references)', 'OWASP ZAP scan configuration', 'Pen-test scope document (for major releases)', 'Blue slot (previous Staging version, still live)'],
+    checks:['Blue/Green: deploy Green slot to Staging Container Apps → traffic split: Green 0% initially', 'APIM canary: route 10% of Staging synthetic traffic to Green via x-api-canary header', 'DAST (OWASP ZAP full scan): OWASP Top 10, security headers, CORS, JWT handling, webhook replay', 'Pen-test (major releases): external/internal manual pen-test against Staging Green → OWASP Top 10 + ASVS Level 2', 'SLO soak: 7 continuous days of synthetic probe traffic → all SLO dashboards green', 'Infrastructure drift check: Bicep/Terraform plan shows zero unexpected changes'],
+    outputs:['ZAP DAST scan report (SARIF + HTML)', 'Pen-test report (external provider) — for major releases', 'Staging SLO dashboard (7-day green screenshot)', 'Security Lead sign-off (ticket)', 'Blue/Green traffic switch log'],
+    gates:['DAST: 0 Critical/High findings unresolved', 'Pen-test: 0 Critical/High findings (or accepted + remediation date)', 'SLO green for 7 days on Staging', 'Security Lead approval', 'Infrastructure drift: 0 unplanned changes'],
+    rfp:['-03','-09','-11'] },
   { id:'CANARY', label:'Canary 5% → 100%', sub:'APIM routing + Front Door weights', color:'#f97316', icon:'🐤',
     what:'Graduated production rollout: route increasing % of real traffic to Green slot while monitoring SLO dashboards. Automatic rollback trigger if error rate spikes.',
     inputs:['Stage-approved Green slot', 'APIM product canary routing configuration', 'SLO burn-rate alert thresholds'],
@@ -921,8 +868,8 @@ function renderPipeDetail(stage, wrap) {
 // FAILOVER TIMELINE
 // ══════════════════════════════════════════════════════════════════════════════
 const FT_STEPS = [
-  { id:'FT-0', t:'T+0:00', color:'#ef4444', title:'Region A Incident Detected', actors:'Front Door WAF · APIM A · Container Apps A · PostgreSQL A',
-    what:'Region A services begin experiencing failures. PostgreSQL primary starts returning write timeouts. Container Apps health probes start failing. Front Door health probe detects APIM A is unresponsive.',
+  { id:'FT-0', t:'T+0:00', color:'#ef4444', title:'Region A Incident Detected', actors:'Front Door WAF · APIM A · Container Apps A · SQL MI Region A',
+    what:'Region A services begin experiencing failures. SQL MI primary starts returning write timeouts. Container Apps health probes start failing. Front Door health probe detects APIM A is unresponsive.',
     commands:['Front Door: health probe to APIM A returns 503 or times out (probe every 30s)','App Insights: P95 latency breaches SLO burn-rate alert (14× in 5min window)','Sentinel: anomaly detection fires on error rate spike → PagerDuty P1 page','On-call SRE receives page → opens incident bridge'],
     criteria:['Front Door probe failure count ≥ 3 consecutive','SLO burn-rate alert: 14× @ 5min/1h window triggered','P1 incident declared — freeze all feature deployments'],
     us_impact:['US-1: prefill requests failing → degraded mode (no prefill)', 'US-2: submit blocked → saga paused', 'US-38: DR procedure activated'] },
@@ -946,10 +893,10 @@ const FT_STEPS = [
     commands:['Azure CLI: az servicebus georecovery-alias fail-over --resource-group rg-prod --namespace sb-prod-a --alias sb-alias-prod', 'Verify: alias DNS now points to Region B namespace', 'Consumer apps: restart to pick up new alias endpoint (rolling restart in Container Apps B)', 'DLQ inspection: list any DLQ messages from Region A partition that need re-drive'],
     criteria:['Service Bus alias DNS resolves to Region B namespace within 5min', 'Consumers reconnected to Region B Service Bus', 'No DLQ message age > 4h (alert threshold)'],
     us_impact:['US-9 (Sagas): saga messages now flowing through Region B Service Bus', 'US-37 (DLQ): DLQ monitoring switched to Region B namespace'] },
-  { id:'FT-5', t:'T+15:00', color:'#ef4444', title:'PostgreSQL Replica Promotion', actors:'PostgreSQL B (Replica) · SRE · Azure DBA',
-    what:'Promote PostgreSQL Region B read replica to primary. This is the highest-risk step — must be done carefully to avoid split-brain. Single-writer constraint enforced.',
-    commands:['Step 1: Confirm Region A PostgreSQL is truly unavailable (not a network partition — avoid split-brain)', 'Step 2: Azure CLI: az postgres flexible-server promote --resource-group rg-prod-b --name pg-prod-b --mode switchover', 'Step 3: Update Key Vault secret: pg-connection-string → Region B primary endpoint', 'Step 4: Container Apps B: restart Orchestrator and Adapters to pick up new connection string (Key Vault reference auto-refresh or manual restart)', 'Step 5: Verify: test write to Region B PostgreSQL succeeds'],
-    criteria:['PostgreSQL B promoted to primary: read/write mode confirmed', 'Connection string in Key Vault updated', 'First write to Region B ODS: success (< 30s after connection string update)', 'No duplicate writes: Region A PostgreSQL confirmed offline before promotion'],
+  { id:'FT-5', t:'T+15:00', color:'#ef4444', title:'Azure SQL MI Replica Promotion', actors:'SQL MI Region B (Replica) · SRE · Azure DBA',
+    what:'Promote Azure SQL MI Region B read replica to primary. This is the highest-risk step — must be done carefully to avoid split-brain. Single-writer constraint enforced.',
+    commands:['Step 1: Confirm Region A Azure SQL MI is truly unavailable (not a network partition — avoid split-brain)', 'Step 2: Azure CLI: az sql mi-arc failover (or Azure Portal auto-failover group) --resource-group rg-prod-b --name pg-prod-b --mode switchover', 'Step 3: Update Key Vault secret: pg-connection-string → Region B primary endpoint', 'Step 4: Container Apps B: restart Orchestrator and Adapters to pick up new connection string (Key Vault reference auto-refresh or manual restart)', 'Step 5: Verify: test write to Region B Azure SQL MI succeeds'],
+    criteria:['SQL MI secondary promoted to primary: read/write mode confirmed', 'Connection string in Key Vault updated', 'First write to Region B ODS: success (< 30s after connection string update)', 'No duplicate writes: Region A Azure SQL MI confirmed offline before promotion'],
     us_impact:['US-12 (Draft save): draft writes now go to Region B ODS', 'US-24 (Submit): application records now written to Region B ODS', 'US-9 (Sagas): saga state written to Region B ODS'] },
   { id:'FT-6', t:'T+18:00', color:'#22c55e', title:'Cosmos DB & Redis Verification', actors:'Cosmos DB · Redis Enterprise B · SRE',
     what:'Verify Cosmos DB multi-region automatic failover and Redis geo-replication status.',
@@ -968,16 +915,16 @@ const FT_STEPS = [
     us_impact:['All journeys: restored in Region B', 'Performance: slightly degraded (cache cold, single region) — acceptable DR mode', 'US-38: DR scenario complete — document actual RTO for quarterly report'] },
   { id:'FT-9', t:'T+Recovery', color:'#8b5cf6', title:'Region A Restoration & Failback', actors:'SRE · Azure Support · DBA',
     what:'After Region A is restored (Azure infrastructure fix, outage resolution), plan and execute controlled failback. This is not emergency — done carefully during low-traffic window.',
-    commands:['Verify Region A infrastructure is stable (24h observation after restoration)', 'Re-sync PostgreSQL: Region A becomes new replica (logical replication from Region B primary)', 'Gradual failback: Front Door canary 5% → 25% → 50% → 100% back to Region A (same canary process as normal release)', 'Service Bus alias: switch back to Region A namespace during low-traffic window', 'Post-failback: verify Region B returns to warm standby state'],
-    criteria:['PostgreSQL Region A re-synced as replica (lag < 5min)', 'Canary failback: SLO green at each % step', 'Region B: returned to warm standby (scale to min=1 or 0)', 'Failback report: documented RPO/RTO achieved, lessons learned'],
+    commands:['Verify Region A infrastructure is stable (24h observation after restoration)', 'Re-sync Azure SQL MI: Region A becomes new replica (logical replication from Region B primary)', 'Gradual failback: Front Door canary 5% → 25% → 50% → 100% back to Region A (same canary process as normal release)', 'Service Bus alias: switch back to Region A namespace during low-traffic window', 'Post-failback: verify Region B returns to warm standby state'],
+    criteria:['Azure SQL MI Region A re-synced as replica (lag < 5min)', 'Canary failback: SLO green at each % step', 'Region B: returned to warm standby (scale to min=1 or 0)', 'Failback report: documented RPO/RTO achieved, lessons learned'],
     us_impact:['All journeys: fully restored to normal Region A primary performance', 'MDM cache: warm in Region A (populated during DR period)', 'US-38: DR cycle complete — update quarterly DR drill report'] }
 ];
 
 const FT_US_MAP = [
   { us:'US-1 Prefill', impact:'Cache cold in Region B initially → 100% miss rate → degrade to direct adapter fetch → P95 ≤ 3s (relaxed DR SLO). Recovers to normal ≥ 80% hit rate within 1-2h as cache warms.', severity:'medium' },
   { us:'US-2 Full Application', impact:'In-flight saga steps may be interrupted at Region A failure. Saga state persisted in ODS — re-driven from Region B ODS after promotion. eSign/payment webhooks: re-routed to Region B via Front Door.', severity:'high' },
-  { us:'US-9 Sagas', impact:'Orchestrator saga state stored in PostgreSQL — available in Region B after replica promotion. In-flight sagas retried from last committed step. Service Bus messages re-queued via geo-DR alias.', severity:'high' },
-  { us:'US-24 Submit (Idempotent)', impact:'Idempotency ledger in ODS — available after PostgreSQL B promotion. Duplicate submissions (from client retry) handled correctly by idempotency key.', severity:'medium' },
+  { us:'US-9 Sagas', impact:'Orchestrator saga state stored in Azure SQL MI — available in Region B after replica promotion. In-flight sagas retried from last committed step. Service Bus messages re-queued via geo-DR alias.', severity:'high' },
+  { us:'US-24 Submit (Idempotent)', impact:'Idempotency ledger in ODS — available after SQL MI Region B promotion. Duplicate submissions (from client retry) handled correctly by idempotency key.', severity:'medium' },
   { us:'US-28 MDM Cache', impact:'Redis cold start → 100% miss rate → graceful degrade → direct registry adapter calls → higher latency but requests succeed. Cache warms up gradually as new prefill requests populate Redis B.', severity:'low' },
   { us:'US-38 DR', impact:'This IS the DR scenario. RTO target ≤ 60min. Smoke tests validate recovery. Quarterly drill validates this timeline is achievable.', severity:'info' },
 ];
@@ -988,23 +935,108 @@ function buildFailoverTimeline() {
   const usMap = document.getElementById('ft-us-map');
   if (!timeline) return;
 
-  FT_STEPS.forEach(step => {
+  // State
+  let currentStep = -1;
+  let playing = false;
+  let playTimer = null;
+
+  // Build play controls bar
+  const ctrlBar = document.createElement('div');
+  ctrlBar.style.cssText = 'display:flex;align-items:center;gap:10px;margin-bottom:18px;padding:10px 14px;background:var(--bg-elevated);border:1px solid var(--border-mid);border-radius:var(--r-lg)';
+  ctrlBar.innerHTML = `
+    <button id="ft-play-btn" style="display:flex;align-items:center;gap:6px;padding:6px 16px;background:var(--accent);color:#fff;border:none;border-radius:var(--r-md);font-size:.78rem;font-weight:700;cursor:pointer;transition:opacity .15s">
+      ▶ Play Drill
+    </button>
+    <button id="ft-prev-btn" style="padding:5px 12px;border:1px solid var(--border-mid);background:var(--bg-surface);color:var(--text-2);border-radius:var(--r-md);font-size:.75rem;cursor:pointer" disabled>← Prev</button>
+    <button id="ft-next-btn" style="padding:5px 12px;border:1px solid var(--border-mid);background:var(--bg-surface);color:var(--text-2);border-radius:var(--r-md);font-size:.75rem;cursor:pointer" disabled>Next →</button>
+    <button id="ft-reset-btn" style="padding:5px 12px;border:1px solid var(--border-mid);background:var(--bg-surface);color:var(--text-2);border-radius:var(--r-md);font-size:.75rem;cursor:pointer">↺ Reset</button>
+    <span id="ft-progress-label" style="font-family:var(--font-mono);font-size:.72rem;color:var(--text-3);margin-left:4px">Click Play to begin step-by-step drill</span>`;
+  timeline.before(ctrlBar);
+
+  // Build step cards (locked initially)
+  FT_STEPS.forEach((step, i) => {
     const div = document.createElement('div');
     div.className = 'ft-step';
+    div.dataset.idx = i;
+    div.style.opacity = '0.35';
     div.innerHTML = `
       <div class="ft-dot" style="color:${step.color};background:${hexA4(step.color,0.25)}"></div>
-      <div class="ft-card">
+      <div class="ft-card" style="cursor:pointer">
         <div class="ft-time">${step.t}</div>
         <div class="ft-title">${step.title}</div>
         <div class="ft-actors">${step.actors}</div>
       </div>`;
     div.querySelector('.ft-card').addEventListener('click', () => {
-      timeline.querySelectorAll('.ft-card').forEach(c => c.classList.remove('active'));
-      div.querySelector('.ft-card').classList.add('active');
-      renderFTDetail(step, detail);
+      if (parseInt(div.dataset.idx) <= currentStep) activateStep(i);
     });
     timeline.appendChild(div);
   });
+
+  function activateStep(idx) {
+    currentStep = idx;
+    const steps = timeline.querySelectorAll('.ft-step');
+    steps.forEach((s, i) => {
+      s.style.opacity = i <= idx ? '1' : '0.35';
+      s.querySelector('.ft-card').classList.toggle('active', i === idx);
+    });
+    renderFTDetail(FT_STEPS[idx], detail);
+    const lbl = document.getElementById('ft-progress-label');
+    if(lbl) lbl.textContent = `Step ${idx+1} of ${FT_STEPS.length} · ${FT_STEPS[idx].t}`;
+    document.getElementById('ft-prev-btn').disabled = idx <= 0;
+    document.getElementById('ft-next-btn').disabled = idx >= FT_STEPS.length - 1;
+    // Scroll step into view
+    steps[idx].scrollIntoView({ behavior:'smooth', block:'nearest' });
+  }
+
+  function startPlay() {
+    if (currentStep >= FT_STEPS.length - 1) { resetDrill(); return; }
+    playing = true;
+    const btn = document.getElementById('ft-play-btn');
+    if(btn) { btn.textContent = '⏸ Pause'; btn.style.background = '#f59e0b'; }
+    document.getElementById('ft-next-btn').disabled = false;
+    document.getElementById('ft-prev-btn').disabled = false;
+    nextStep();
+  }
+
+  function pausePlay() {
+    playing = false;
+    clearTimeout(playTimer);
+    const btn = document.getElementById('ft-play-btn');
+    if(btn) { btn.textContent = '▶ Resume'; btn.style.background = 'var(--accent)'; }
+  }
+
+  function nextStep() {
+    const next = currentStep + 1;
+    if (next >= FT_STEPS.length) { pausePlay(); return; }
+    activateStep(next);
+    if (playing) playTimer = setTimeout(nextStep, 1800);
+  }
+
+  function prevStep() {
+    if (currentStep > 0) activateStep(currentStep - 1);
+  }
+
+  function resetDrill() {
+    clearTimeout(playTimer);
+    playing = false;
+    currentStep = -1;
+    const steps = timeline.querySelectorAll('.ft-step');
+    steps.forEach(s => { s.style.opacity='0.35'; s.querySelector('.ft-card').classList.remove('active'); });
+    if(detail) detail.innerHTML = '';
+    const btn = document.getElementById('ft-play-btn');
+    if(btn) { btn.textContent = '▶ Play Drill'; btn.style.background='var(--accent)'; }
+    document.getElementById('ft-prev-btn').disabled = true;
+    document.getElementById('ft-next-btn').disabled = true;
+    const lbl = document.getElementById('ft-progress-label');
+    if(lbl) lbl.textContent = 'Click Play to begin step-by-step drill';
+  }
+
+  document.getElementById('ft-play-btn').addEventListener('click', () => {
+    if (playing) pausePlay(); else startPlay();
+  });
+  document.getElementById('ft-next-btn').addEventListener('click', () => { clearTimeout(playTimer); nextStep(); if(playing) playTimer=setTimeout(nextStep,1800); });
+  document.getElementById('ft-prev-btn').addEventListener('click', () => { clearTimeout(playTimer); prevStep(); });
+  document.getElementById('ft-reset-btn').addEventListener('click', resetDrill);
 
   if (usMap) {
     const sevColors = { high:'#ef4444', medium:'#f59e0b', low:'#22c55e', info:'#3b82f6' };
@@ -1044,7 +1076,7 @@ const DR_DRILL_STEPS = [
   { icon:'🔀', color:'#f59e0b', label:'Front Door Failover', sub:'Verify origin switch to Region B within 5min' },
   { icon:'🌿', color:'#22c55e', label:'Region B Warm-Up', sub:'Scale Container Apps B, verify /healthz all green' },
   { icon:'📨', color:'#f59e0b', label:'Service Bus Alias Switch', sub:'Execute geo-DR alias failover, verify consumer reconnect' },
-  { icon:'🗄', color:'#ef4444', label:'PostgreSQL Promotion', sub:'Promote replica to primary, update Key Vault, restart apps' },
+  { icon:'🗄', color:'#ef4444', label:'Azure SQL MI Promotion', sub:'Promote replica to primary, update Key Vault, restart apps' },
   { icon:'🧪', color:'#22c55e', label:'Smoke Tests', sub:'Run DR smoke suite: auth → prefill → submit dry-run' },
   { icon:'📊', color:'#8b5cf6', label:'Measure RTO/RPO', sub:'Record actual time, verify RPO ≤ 5min, RTO ≤ 60min' },
   { icon:'📝', color:'#3b82f6', label:'After-Action Review', sub:'Blameless post-mortem, runbook PRs, thresholds update' },
@@ -1082,10 +1114,10 @@ const CHAOS_EXP = [
     accept:'Graceful key rollover: zero user-visible errors during transition. Token with new kid: accepted within 30s of key rotation. Token with old kid post-TTL: 401 → portal refresh → transparent re-auth.',
     restore:'Old kid removed from JWKS. System normalised on new key.',
     nfr:['NFR-09','NFR-13'], us:['US-1','US-7'] },
-  { id:'CE-07', title:'PostgreSQL Primary Failover (Zonal)', severity:'high', fault:'Simulate availability zone failure: kill PostgreSQL primary in Zone 1 (ZRS will promote standby in Zone 2)',
-    expected:'PostgreSQL ZRS: automatic promotion of Zone 2 standby to primary within 60-120s. Application reconnects using Azure managed failover (DNS CNAME update). Write operations resume. Data loss: 0 (synchronous ZRS replication).',
+  { id:'CE-07', title:'Azure SQL MI Primary Failover (Zonal)', severity:'high', fault:'Simulate availability zone failure: kill SQL MI primary in Zone 1 (ZRS will promote standby in Zone 2)',
+    expected:'SQL MI (Business Critical ZRS): automatic promotion of Zone 2 standby to primary within 60-120s. Application reconnects using Azure managed failover (DNS CNAME update). Write operations resume. Data loss: 0 (synchronous ZRS replication).',
     accept:'Application write errors during promotion window (< 120s). After promotion: writes succeed. Data loss: 0 confirmed by record count check. P95 latency: recovers within 5min. No DLQ messages created from write failures (saga retries succeed after reconnect).',
-    restore:'PostgreSQL ZRS re-provisions replacement zone replica automatically.',
+    restore:'SQL MI (Business Critical ZRS) re-provisions replacement zone replica automatically.',
     nfr:['NFR-07','NFR-05'], us:['US-24','US-9'] },
   { id:'CE-08', title:'Malicious Document Upload (EICAR)', severity:'medium', fault:'Upload EICAR standard antivirus test file with valid Content-Type: application/pdf header',
     expected:'Document Intake: Blob receives file. AV scan triggered within 5s. EICAR signature detected. Document status set to Rejected. SHA-256 hash recorded in audit log. SOC alert raised in Sentinel. Document inaccessible to any user.',
@@ -1110,31 +1142,139 @@ function buildDRChaos() {
   const chaosDetail = document.getElementById('chaos-detail');
   if (!drSteps) return;
 
+  // State
+  let currentDRStep = -1;
+  let drPlaying = false;
+  let drTimer = null;
+
+  // Play controls
+  const ctrlBar = document.createElement('div');
+  ctrlBar.style.cssText = 'display:flex;align-items:center;gap:10px;margin-bottom:16px;padding:10px 14px;background:var(--bg-elevated);border:1px solid var(--border-mid);border-radius:var(--r-lg)';
+  ctrlBar.innerHTML = `
+    <button id="dr-play-btn" style="display:flex;align-items:center;gap:6px;padding:6px 16px;background:var(--accent);color:#fff;border:none;border-radius:var(--r-md);font-size:.78rem;font-weight:700;cursor:pointer">
+      ▶ Run Drill
+    </button>
+    <button id="dr-prev-btn" style="padding:5px 12px;border:1px solid var(--border-mid);background:var(--bg-surface);color:var(--text-2);border-radius:var(--r-md);font-size:.75rem;cursor:pointer" disabled>← Prev</button>
+    <button id="dr-next-btn" style="padding:5px 12px;border:1px solid var(--border-mid);background:var(--bg-surface);color:var(--text-2);border-radius:var(--r-md);font-size:.75rem;cursor:pointer" disabled>Next →</button>
+    <button id="dr-reset-btn" style="padding:5px 12px;border:1px solid var(--border-mid);background:var(--bg-surface);color:var(--text-2);border-radius:var(--r-md);font-size:.75rem;cursor:pointer">↺ Reset</button>
+    <span id="dr-progress-label" style="font-family:var(--font-mono);font-size:.72rem;color:var(--text-3);margin-left:4px">Click Run Drill to step through the runbook</span>`;
+  drSteps.before(ctrlBar);
+
+  // Build step tiles (locked initially)
   DR_DRILL_STEPS.forEach((step, i) => {
     const div = document.createElement('div');
     div.className = 'tel-hop';
+    div.dataset.idx = i;
+    div.style.opacity = '0.3';
     div.innerHTML = `
       <div class="tel-hop-icon" style="background:${hexA4(step.color,0.12)};border:1.5px solid ${hexA4(step.color,0.35)}">${step.icon}</div>
       <div>
-        <div style="font-family:var(--font-mono);font-size:.62rem;color:var(--text-3)">Step ${i+1}</div>
+        <div style="font-family:var(--font-mono);font-size:.62rem;color:var(--text-3)">Step ${i+1} of ${DR_DRILL_STEPS.length}</div>
         <div class="tel-hop-title">${step.label}</div>
         <div class="tel-hop-sub">${step.sub}</div>
       </div>`;
     div.addEventListener('click', () => {
-      drSteps.querySelectorAll('.tel-hop').forEach(h => h.classList.remove('active'));
-      div.classList.add('active');
-      const ft = FT_STEPS.find(s => s.title.toLowerCase().includes(step.label.toLowerCase().split(' ')[1]) || i < FT_STEPS.length ? FT_STEPS[Math.min(i, FT_STEPS.length-1)] : null);
-      if (ft) renderChaosDetail(`DR Drill Step ${i+1}: ${step.label}`, step.sub, step.color, chaosDetail);
+      if (parseInt(div.dataset.idx) <= currentDRStep) activateDRStep(i);
     });
     drSteps.appendChild(div);
     if (i < DR_DRILL_STEPS.length - 1) {
       const arr = document.createElement('div');
       arr.className = 'tel-arrow';
       arr.textContent = '↓';
+      arr.style.opacity = '0.3';
+      arr.dataset.arrowIdx = i;
       drSteps.appendChild(arr);
     }
   });
 
+  // Detail panel for current drill step
+  const drDetailWrap = document.createElement('div');
+  drDetailWrap.id = 'dr-step-detail';
+  drDetailWrap.style.cssText = 'margin-top:14px;padding:14px;background:var(--bg-elevated);border:1px solid var(--border-mid);border-radius:var(--r-lg);display:none;font-size:.78rem;color:var(--text-2);line-height:1.65';
+  drSteps.after(drDetailWrap);
+
+  function activateDRStep(idx) {
+    currentDRStep = idx;
+    const tiles = drSteps.querySelectorAll('.tel-hop');
+    const arrows = drSteps.querySelectorAll('.tel-arrow');
+    tiles.forEach((t,i) => {
+      t.style.opacity = i <= idx ? '1' : '0.3';
+      t.classList.toggle('active', i === idx);
+    });
+    arrows.forEach((a,i) => { a.style.opacity = i < idx ? '1' : '0.3'; });
+
+    const step = DR_DRILL_STEPS[idx];
+    const ftStep = FT_STEPS[Math.min(idx, FT_STEPS.length-1)];
+    drDetailWrap.style.display = 'block';
+    drDetailWrap.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="font-size:1.4rem">${step.icon}</div>
+        <div>
+          <div style="font-family:var(--font-mono);font-size:.62rem;color:var(--text-3)">STEP ${idx+1} / ${DR_DRILL_STEPS.length}</div>
+          <div style="font-size:.86rem;font-weight:700;color:${step.color}">${step.label}</div>
+          <div style="font-size:.7rem;color:var(--text-3)">${step.sub}</div>
+        </div>
+      </div>
+      <div style="border-left:3px solid ${step.color};padding-left:10px;margin-bottom:10px;font-size:.76rem">${ftStep.what}</div>
+      <div style="font-size:.63rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:5px">Commands & Actions</div>
+      <ul style="list-style:none;margin-bottom:10px">${ftStep.commands.map(cmd=>`<li style="padding:3px 0 3px 14px;position:relative;font-size:.73rem"><span style="position:absolute;left:0;color:${step.color}">▸</span>${cmd}</li>`).join('')}</ul>
+      <div style="font-size:.63rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:5px">Acceptance Criteria</div>
+      <ul style="list-style:none">${ftStep.criteria.map(cr=>`<li style="padding:3px 0 3px 14px;position:relative;font-size:.73rem"><span style="position:absolute;left:0;color:#16a34a;font-weight:700">✓</span>${cr}</li>`).join('')}</ul>`;
+
+    const lbl = document.getElementById('dr-progress-label');
+    if(lbl) lbl.textContent = `Step ${idx+1} of ${DR_DRILL_STEPS.length} · ${step.label}`;
+    document.getElementById('dr-prev-btn').disabled = idx <= 0;
+    document.getElementById('dr-next-btn').disabled = idx >= DR_DRILL_STEPS.length - 1;
+    drDetailWrap.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  }
+
+  function startDRPlay() {
+    if (currentDRStep >= DR_DRILL_STEPS.length - 1) { resetDRDrill(); return; }
+    drPlaying = true;
+    const btn = document.getElementById('dr-play-btn');
+    if(btn) { btn.textContent = '⏸ Pause'; btn.style.background='#f59e0b'; }
+    document.getElementById('dr-next-btn').disabled = false;
+    document.getElementById('dr-prev-btn').disabled = false;
+    nextDRStep();
+  }
+
+  function pauseDRPlay() {
+    drPlaying = false;
+    clearTimeout(drTimer);
+    const btn = document.getElementById('dr-play-btn');
+    if(btn) { btn.textContent = '▶ Resume'; btn.style.background='var(--accent)'; }
+  }
+
+  function nextDRStep() {
+    const next = currentDRStep + 1;
+    if (next >= DR_DRILL_STEPS.length) { pauseDRPlay(); return; }
+    activateDRStep(next);
+    if (drPlaying) drTimer = setTimeout(nextDRStep, 2000);
+  }
+
+  function resetDRDrill() {
+    clearTimeout(drTimer);
+    drPlaying = false;
+    currentDRStep = -1;
+    drSteps.querySelectorAll('.tel-hop').forEach(t => { t.style.opacity='0.3'; t.classList.remove('active'); });
+    drSteps.querySelectorAll('.tel-arrow').forEach(a => a.style.opacity='0.3');
+    drDetailWrap.style.display = 'none';
+    const btn = document.getElementById('dr-play-btn');
+    if(btn) { btn.textContent = '▶ Run Drill'; btn.style.background='var(--accent)'; }
+    document.getElementById('dr-prev-btn').disabled = true;
+    document.getElementById('dr-next-btn').disabled = true;
+    const lbl = document.getElementById('dr-progress-label');
+    if(lbl) lbl.textContent = 'Click Run Drill to step through the runbook';
+  }
+
+  document.getElementById('dr-play-btn').addEventListener('click', () => {
+    if (drPlaying) pauseDRPlay(); else startDRPlay();
+  });
+  document.getElementById('dr-next-btn').addEventListener('click', () => { clearTimeout(drTimer); nextDRStep(); if(drPlaying) drTimer=setTimeout(nextDRStep,2000); });
+  document.getElementById('dr-prev-btn').addEventListener('click', () => { clearTimeout(drTimer); if(currentDRStep>0) activateDRStep(currentDRStep-1); });
+  document.getElementById('dr-reset-btn').addEventListener('click', resetDRDrill);
+
+  // ── Chaos Experiments Grid ──────────────────────────────────────────────────
   if (chaosGrid) {
     CHAOS_EXP.forEach(exp => {
       const card = document.createElement('div');
@@ -1151,19 +1291,29 @@ function buildDRChaos() {
       card.addEventListener('click', () => {
         chaosGrid.querySelectorAll('.chaos-card').forEach(c => c.classList.remove('active'));
         card.classList.add('active');
-        renderChaosExpDetail(exp, chaosDetail);
+        renderChaosDetail(exp.title, exp.fault, exp.severity === 'high' ? '#ef4444' : exp.severity === 'medium' ? '#f59e0b' : '#22c55e', chaosDetail, exp);
       });
       chaosGrid.appendChild(card);
     });
   }
 }
 
-function renderChaosDetail(title, sub, color, wrap) {
+function renderChaosDetail(title, fault, color, wrap, exp) {
+  if (!wrap) return;
+  if (!exp) { wrap.innerHTML = `<div style="border-left:4px solid ${color};padding-left:12px"><div style="font-size:.86rem;font-weight:700;color:${color}">${title}</div><div style="font-size:.75rem;color:var(--text-2);margin-top:6px">${fault}</div></div>`; return; }
   wrap.innerHTML = `
-    <div style="border-left:4px solid ${color};padding-left:12px">
-      <div style="font-size:.86rem;font-weight:700;color:${color}">${title}</div>
-      <div style="font-size:.73rem;color:var(--text-2);margin-top:4px">${sub}</div>
-    </div>`;
+    <div style="border-left:4px solid ${color};padding-left:12px;margin-bottom:12px">
+      <div style="font-family:var(--font-mono);font-size:.62rem;color:var(--text-3)">${exp.id}</div>
+      <div style="font-size:.88rem;font-weight:700;color:${color};margin:3px 0">${exp.title}</div>
+      <div style="font-size:.7rem;color:var(--text-3)">${exp.fault}</div>
+    </div>
+    <div style="font-size:.63rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:4px;padding-bottom:3px;border-bottom:1px solid var(--border)">Expected Behaviour</div>
+    <div style="font-size:.74rem;color:var(--text-2);line-height:1.65;margin-bottom:10px;border-left:3px solid ${color};padding-left:8px">${exp.expected}</div>
+    <div style="font-size:.63rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:4px;padding-bottom:3px;border-bottom:1px solid var(--border)">Acceptance Criteria</div>
+    <div style="font-size:.74rem;color:var(--text-2);line-height:1.65;margin-bottom:10px">${exp.accept}</div>
+    <div style="font-size:.63rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:4px;padding-bottom:3px;border-bottom:1px solid var(--border)">Restore Procedure</div>
+    <div style="font-size:.74rem;color:var(--text-2);line-height:1.65;margin-bottom:10px">${exp.restore}</div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap">${exp.nfr.map(n=>`<span style="font-family:var(--font-mono);font-size:.6rem;padding:2px 6px;border-radius:3px;background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.2);color:#7c3aed">${n}</span>`).join('')}${exp.us.map(u=>`<span style="font-family:var(--font-mono);font-size:.6rem;padding:2px 6px;border-radius:3px;background:var(--orange-50);border:1px solid rgba(234,88,12,.2);color:var(--accent-dk)">${u}</span>`).join('')}</div>`;
 }
 
 function renderChaosExpDetail(exp, wrap) {
